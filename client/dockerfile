@@ -1,0 +1,17 @@
+# Dockerfile (Development Mode)
+
+FROM node:18
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+# Expose the desired port
+EXPOSE 3000
+
+# Start the React app in dev mode on port 3000
+CMD ["npm", "run", "dev", "--", "--host", "--port", "3000"]
