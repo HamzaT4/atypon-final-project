@@ -65,6 +65,54 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  executor-java:
+    build:
+      context: ./executor-java
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    networks:
+      - app-network
+  executor-python:
+    build:
+      context: ./executor-python
+    ports:
+      - "8084:8084"
+    networks:
+      - app-network
+
+  executor-c:
+    build:
+      context: ./executor-c
+    ports:
+      - "8085:8085"
+    networks:
+      - app-network
+
+  executor-cpp:
+    build:
+      context: ./executor-cpp
+    ports:
+      - "8086:8086"
+    networks:
+      - app-network
+
+  executor-js:
+    build:
+      context: ./executor-js
+    ports:
+      - "8087:8087"
+    networks:
+      - app-network
+
+  executor-ruby:
+    build:
+      context: ./executor-ruby
+    ports:
+      - "8088:8088"
+    networks:
+      - app-network
+
 
 volumes:
   filesystem_data:

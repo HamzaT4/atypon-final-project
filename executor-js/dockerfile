@@ -1,0 +1,7 @@
+FROM openjdk:17-slim
+RUN apt update && apt install -y nodejs npm
+WORKDIR /app
+COPY . .
+RUN ./mvnw package -DskipTests
+EXPOSE 8087
+CMD ["java", "-jar", "target/executor-js-0.0.1-SNAPSHOT.jar"]
