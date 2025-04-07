@@ -1,0 +1,75 @@
+version: "3.9"
+services:
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - client
+      - server
+    networks:
+      - app-network
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - FILESYSTEM_SERVICE_URL=http://filesystem:8081
+    depends_on:
+      - filesystem
+    networks:
+      - app-network
+
+  filesystem:
+    build:
+      context: ./filesystem
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    volumes:
+      - filesystem_data:/data
+    networks:
+      - app-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: filesystem_db
+      MYSQL_USER: fs_user
+      MYSQL_PASSWORD: fs_pass
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  filesystem_data:
+  mysql_data:
+
+networks:
+  app-network:
+    driver: bridge
