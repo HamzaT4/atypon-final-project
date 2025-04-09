@@ -21,8 +21,14 @@ public class FileSystemClient {
             .uri(URI.create(fsBaseUrl + "/read?filename=" + filename))
             .GET()
             .build();
-
+    
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("File system read failed: " + response.body());
+        }
+    
         return response.body();
     }
+    
 }

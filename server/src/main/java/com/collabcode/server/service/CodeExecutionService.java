@@ -19,11 +19,12 @@ public class CodeExecutionService {
     @Autowired
     private ExecutorRouterService executorRouterService;
 
-    public String executeFile(String fileId) throws Exception {
+    public String execute(String fileId, String snapshotName) throws Exception {
         Optional<FileMetadata> meta = metadataRepo.findById(fileId);
         if (meta.isEmpty()) throw new RuntimeException("File metadata not found");
 
-        String code = fileSystemClient.getFileContent(meta.get().getFilename());
+        String code = fileSystemClient.getFileContent(snapshotName);
+
         String lang = getLangFromExtension(meta.get().getFilename());
 
         return executorRouterService.forwardToExecutor(lang, code);

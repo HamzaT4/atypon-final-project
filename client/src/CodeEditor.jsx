@@ -5,6 +5,35 @@ export default function CodeEditor() {
   const [code, setCode] = useState('// Write your code here');
   const [output, setOutput] = useState('');
   const [filename, setFilename] = useState('main.cpp');
+  const [fileId, setFileId] = useState(null);
+  const [snapshotName, setSnapshotName] = useState(null);
+
+  const handleSave = async () => {
+    try {
+      const res = await fetch('/api/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, code })
+      });
+      const data = await res.json();
+
+      if (!data.fileId) {
+        console.error('Save failed: fileId not returned');
+        return;
+      }
+
+      setFileId(data.fileId);
+
+      const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 15);
+      const ext = filename.substring(filename.lastIndexOf('.'));
+      const snapshot = `${data.fileId}_${timestamp}${ext}`;
+
+      setSnapshotName(snapshot);
+      console.log('Code saved as snapshot:', snapshot);
+    } catch (err) {
+      console.error('Save failed:', err);
+    }
+  };
 
   const handleRun = async () => {
     try {
@@ -13,39 +42,42 @@ export default function CodeEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, code })
       });
-      const saveData = await saveRes.json();
-      const fileId = saveData?.fileId;
-
-      if (!fileId) {
-        setOutput('Execution failed: Could not get file ID.');
+  
+      const text = await saveRes.text();
+      let saveData;
+  
+      try {
+        saveData = JSON.parse(text);
+      } catch (e) {
+        setOutput('Save failed. Server returned non-JSON response:\n' + text);
         return;
       }
-
-      const res = await fetch(`/api/execute?fileId=${fileId}`, { method: 'POST' });
-      const text = await res.text();
-      setOutput(text);
+  
+      const fileId = saveData?.fileId;
+      const snapshotName = saveData?.snapshotName;
+  
+      if (!fileId || !snapshotName) {
+        setOutput('Execution failed: Could not get file ID or snapshot name.');
+        return;
+      }
+  
+      const res = await fetch(`/api/execute?fileId=${fileId}&snapshotName=${snapshotName}`, {
+        method: 'POST'
+      });
+  
+      const outputText = await res.text();
+      setOutput(outputText);
     } catch (err) {
       setOutput('Execution failed: ' + err.message);
     }
   };
-
-  const handleSave = async () => {
-    try {
-      await fetch('/api/code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename, code })
-      });
-      console.log('Code saved');
-    } catch (err) {
-      console.error('Save failed:', err);
-    }
-  };
+  
+  
 
   return (
     <div className="editor-layout">
       <div className="header">
-        <h1>🧠 Collaborative Code Editor</h1>
+        <h1>Gitypon Hub</h1>
         <div>
           <input
             value={filename}
@@ -74,13 +106,13 @@ export default function CodeEditor() {
       <div className="info-panel">
         <h2>🕒 Version Control</h2>
         <ul>
-          <li>+ Added main.cpp</li>
+          <li>+ Added {filename}</li>
           <li>~ Modified script.py</li>
         </ul>
       </div>
 
       <div className="console">
-        {output || '// Output will appear here...'}
+        <pre>{output || '// Output will appear here...'}</pre>
       </div>
     </div>
   );
