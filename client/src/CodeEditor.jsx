@@ -1,62 +1,86 @@
 import React, { useState } from 'react';
+import './App.css';
 
 export default function CodeEditor() {
   const [code, setCode] = useState('// Write your code here');
   const [output, setOutput] = useState('');
-  const [fileId, setFileId] = useState('demo-file');
+  const [filename, setFilename] = useState('main.cpp');
 
   const handleRun = async () => {
-    const res = await fetch(`/api/execute?fileId=${fileId}`, { method: 'POST' });
-    const text = await res.text();
-    setOutput(text);
+    try {
+      const saveRes = await fetch('/api/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, code })
+      });
+      const saveData = await saveRes.json();
+      const fileId = saveData?.fileId;
+
+      if (!fileId) {
+        setOutput('Execution failed: Could not get file ID.');
+        return;
+      }
+
+      const res = await fetch(`/api/execute?fileId=${fileId}`, { method: 'POST' });
+      const text = await res.text();
+      setOutput(text);
+    } catch (err) {
+      setOutput('Execution failed: ' + err.message);
+    }
   };
 
-  const handleSave = () => {
-    // Placeholder: Save logic will be implemented later
-    console.log('Save clicked');
+  const handleSave = async () => {
+    try {
+      await fetch('/api/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, code })
+      });
+      console.log('Code saved');
+    } catch (err) {
+      console.error('Save failed:', err);
+    }
   };
 
   return (
-    <div className="grid grid-cols-[200px_1fr_300px] grid-rows-[50px_1fr_150px] h-screen bg-gray-900 text-white">
-      {/* Header Bar */}
-      <div className="col-span-3 flex items-center justify-between px-6 bg-gray-800 border-b border-gray-700">
-        <h1 className="text-lg font-semibold">🧠 Collaborative Code Editor</h1>
-        <div className="space-x-4">
-          <button onClick={handleSave} className="bg-gray-600 px-4 py-1 rounded hover:bg-gray-500">Save</button>
-          <button onClick={handleRun} className="bg-blue-600 px-4 py-1 rounded hover:bg-blue-500">Run</button>
+    <div className="editor-layout">
+      <div className="header">
+        <h1>🧠 Collaborative Code Editor</h1>
+        <div>
+          <input
+            value={filename}
+            onChange={(e) => setFilename(e.target.value)}
+            placeholder="Filename"
+            style={{ padding: '4px 8px', marginRight: 8 }}
+          />
+          <button onClick={handleSave}>Save</button>
+          <button onClick={handleRun} style={{ marginLeft: 8 }}>Run</button>
         </div>
       </div>
 
-      {/* Sidebar - Folders */}
-      <div className="row-span-2 border-r border-gray-700 p-4">
-        <h2 className="font-bold mb-4">📁 Files</h2>
+      <div className="sidebar">
+        <h2>📁 Files</h2>
         <ul>
-          <li className="hover:text-blue-400 cursor-pointer">main.java</li>
-          <li className="hover:text-blue-400 cursor-pointer">utils.py</li>
-          <li className="hover:text-blue-400 cursor-pointer">index.js</li>
+          <li>main.java</li>
+          <li>script.py</li>
+          <li>index.js</li>
         </ul>
       </div>
 
-      {/* Code Editor */}
-      <textarea
-        className="w-full h-full resize-none bg-gray-800 p-4 font-mono border-r border-gray-700 focus:outline-none"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-      />
+      <div className="editor">
+        <textarea value={code} onChange={(e) => setCode(e.target.value)} />
+      </div>
 
-      {/* Right Sidebar - Info */}
-      <div className="border-l border-gray-700 p-4">
-        <h2 className="font-bold mb-4">🕒 Version Control</h2>
-        <ul className="text-sm space-y-1">
-          <li>+ Added new file</li>
-          <li>~ Edited main.java</li>
-          <li>- Removed temp.py</li>
+      <div className="info-panel">
+        <h2>🕒 Version Control</h2>
+        <ul>
+          <li>+ Added main.cpp</li>
+          <li>~ Modified script.py</li>
         </ul>
       </div>
 
-      {/* Output Console */}
-      <div className="col-span-2 bg-black text-green-400 p-4 font-mono overflow-auto border-t border-gray-700">
-        <p>{output || '// Output will appear here...'}</p>
+      <div className="console">
+        {output || '// Output will appear here...'}
       </div>
     </div>
   );
