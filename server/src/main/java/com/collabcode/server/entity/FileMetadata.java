@@ -11,6 +11,8 @@ public class FileMetadata {
     private String filename;
     private String owner;
     private LocalDateTime createdAt;
+    private Long folderId;
+
 
     public FileMetadata() {}
 
@@ -32,5 +34,8 @@ public class FileMetadata {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public Long getFolderId() { return folderId; }
+    public void setFolderId(Long folderId) { this.folderId = folderId; }
 }
 
