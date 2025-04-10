@@ -6,21 +6,23 @@ import java.time.LocalDateTime;
 
 @Entity
 public class FileMetadata {
+
     @Id
     private String id;
+
     private String filename;
     private String owner;
     private LocalDateTime createdAt;
     private Long folderId;
 
-
     public FileMetadata() {}
 
-    public FileMetadata(String id, String filename, String owner, LocalDateTime createdAt) {
+    public FileMetadata(String id, String filename, String owner, LocalDateTime createdAt, Long folderId) {
         this.id = id;
         this.filename = filename;
         this.owner = owner;
         this.createdAt = createdAt;
+        this.folderId = folderId;
     }
 
     public String getId() { return id; }
@@ -38,4 +40,3 @@ public class FileMetadata {
     public Long getFolderId() { return folderId; }
     public void setFolderId(Long folderId) { this.folderId = folderId; }
 }
-

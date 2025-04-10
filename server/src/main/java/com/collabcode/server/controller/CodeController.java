@@ -27,55 +27,64 @@ public class CodeController {
     }
 
     @PostMapping("/code")
-    public ResponseEntity<?> saveCode(@RequestBody CodeRequest request) {
-        try {
-            String filename = request.getFilename();
-            String extension = filename.substring(filename.lastIndexOf("."));
+public ResponseEntity<?> saveCode(@RequestBody CodeRequest request) {
+    try {
+        String filename = request.getFilename();
+        String extension = filename.substring(filename.lastIndexOf("."));
 
-            // Try to find existing file metadata by filename
-            Optional<FileMetadata> existing = metadataRepository.findAll()
-                .stream()
-                .filter(f -> f.getFilename().equals(filename))
-                .findFirst();
+        Optional<FileMetadata> existing = metadataRepository.findAll()
+            .stream()
+            .filter(f -> f.getFilename().equals(filename))
+            .findFirst();
 
-            FileMetadata metadata;
-            if (existing.isPresent()) {
-                metadata = existing.get();
-            } else {
-                String newId = UUID.randomUUID().toString();
-                metadata = new FileMetadata(newId, filename, "anonymous", LocalDateTime.now());
-                metadataRepository.save(metadata);
-            }
-
-            // Build snapshot name like: <id>_<timestamp>.<ext>
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String snapshotName = metadata.getId() + "_" + timestamp + extension;
-
-            // Call FileSystem service to save the code
-            String url = filesystemServiceUrl + "/save";
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            
-            SnapshotRequest snapshotRequest = new SnapshotRequest(snapshotName, request.getCode());
-            HttpEntity<SnapshotRequest> entity = new HttpEntity<>(snapshotRequest, headers);
-            restTemplate.postForEntity(url, entity, Void.class);
-
-            return ResponseEntity.ok().body(new SaveResponse(metadata.getId(),snapshotName));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error saving code: " + e.getMessage());
+        FileMetadata metadata;
+        if (existing.isPresent()) {
+            metadata = existing.get();
+        } else {
+            String newId = UUID.randomUUID().toString();
+            metadata = new FileMetadata(
+                newId,
+                filename,
+                "anonymous",
+                LocalDateTime.now(),
+                request.getFolderId() // Support FolderId
+            );
+            metadataRepository.save(metadata);
         }
+
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String snapshotName = metadata.getId() + "_" + timestamp + extension;
+
+        String url = filesystemServiceUrl + "/save";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        SnapshotRequest snapshotRequest = new SnapshotRequest(snapshotName, request.getCode());
+        HttpEntity<SnapshotRequest> entity = new HttpEntity<>(snapshotRequest, headers);
+        restTemplate.postForEntity(url, entity, Void.class);
+
+        return ResponseEntity.ok().body(new SaveResponse(metadata.getId(), snapshotName));
+    } catch (Exception e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error saving code: " + e.getMessage());
     }
+}
 
-    static class CodeRequest {
-        private String code;
-        private String filename;
 
-        public String getCode() { return code; }
-        public void setCode(String code) { this.code = code; }
+static class CodeRequest {
+    private String code;
+    private String filename;
+    private Long folderId; // New field
 
-        public String getFilename() { return filename; }
-        public void setFilename(String filename) { this.filename = filename; }
-    }
+    public String getCode() { return code; }
+    public void setCode(String code) { this.code = code; }
+
+    public String getFilename() { return filename; }
+    public void setFilename(String filename) { this.filename = filename; }
+
+    public Long getFolderId() { return folderId; }
+    public void setFolderId(Long folderId) { this.folderId = folderId; }
+}
+
 
     static class SnapshotRequest {
         private String filename;
