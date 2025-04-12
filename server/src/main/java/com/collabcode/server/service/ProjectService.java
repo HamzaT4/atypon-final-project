@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 public class ProjectService {
@@ -15,30 +14,41 @@ public class ProjectService {
     @Autowired
     private ProjectRepository projectRepository;
 
-    public Project createProject(Project project) {
+    @Autowired
+    private FileSystemClient fileSystemClient;
+
+    public Project create(Project project) {
         project.setCreatedAt(LocalDateTime.now());
-        return projectRepository.save(project);
+        Project saved = projectRepository.save(project);
+
+        // Create project folder in filesystem
+        fileSystemClient.createProjectFolder(saved.getId());
+
+        return saved;
     }
 
-    public List<Project> getAllProjects() {
+    public List<Project> getAll() {
         return projectRepository.findAll();
     }
 
-    public Optional<Project> getProjectById(Long id) {
-        return projectRepository.findById(id);
-    }
-
-    public Project updateProject(Long id, Project updatedProject) {
+    public Project getById(Long id) {
         return projectRepository.findById(id)
-                .map(existing -> {
-                    existing.setName(updatedProject.getName());
-                    existing.setOwner(updatedProject.getOwner());
-                    return projectRepository.save(existing);
-                })
-                .orElseThrow(() -> new RuntimeException("Project not found with ID: " + id));
+                .orElseThrow(() -> new RuntimeException("Project not found"));
     }
 
-    public void deleteProject(Long id) {
+    public Project update(Long id, Project updated) {
+        Project existing = getById(id);
+        existing.setName(updated.getName());
+        existing.setOwner(updated.getOwner());
+        return projectRepository.save(existing);
+    }
+
+    public void delete(Long id) {
+        getById(id); // ensure exists
+
+        // Delete project folder in filesystem
+        fileSystemClient.deleteProjectFolder(id);
+
         projectRepository.deleteById(id);
     }
 }
