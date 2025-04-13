@@ -1,11 +1,11 @@
 package com.collabcode.server.service;
 
 import com.collabcode.server.entity.Project;
+import com.collabcode.server.factory.ProjectFactory;
 import com.collabcode.server.repository.ProjectRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -17,11 +17,21 @@ public class ProjectService {
     @Autowired
     private FileSystemClient fileSystemClient;
 
-    public Project create(Project project) {
-        project.setCreatedAt(LocalDateTime.now());
+    /**
+     * Creates a new Project by using the ProjectFactory to instantiate the object,
+     * then saves it to the repository and creates its corresponding folder in the filesystem.
+     *
+     * @param projectInput A Project object containing at least the name and owner.
+     * @return The saved Project with generated creation timestamp and persisted folder.
+     */
+    public Project create(Project projectInput) {
+        // Instead of setting the createdAt timestamp manually,
+        // delegate the creation to the factory.
+        Project project = ProjectFactory.createProject(projectInput.getName(), projectInput.getOwner());
+        
         Project saved = projectRepository.save(project);
 
-        // Create project folder in filesystem
+        // Create project folder in the filesystem using the newly saved project's ID.
         fileSystemClient.createProjectFolder(saved.getId());
 
         return saved;
@@ -44,9 +54,8 @@ public class ProjectService {
     }
 
     public void delete(Long id) {
-        getById(id); // ensure exists
+        getById(id);
 
-        // Delete project folder in filesystem
         fileSystemClient.deleteProjectFolder(id);
 
         projectRepository.deleteById(id);
