@@ -1,24 +1,89 @@
 // src/ProjectDetailPage.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+
+// Helper function to format file names by removing a trailing underscore plus digits (the timestamp)
+function formatFileName(name) {
+  const parts = name.split("_");
+  const lastPart = parts[parts.length - 1];
+  if (/^\d+$/.test(lastPart)) {
+    return parts.slice(0, parts.length - 1).join("_");
+  }
+  return name;
+}
+
+// Recursive component to render a folder as a collapsible tree.
+// Now, for each file, if editing is allowed, an "Edit" button appears that redirects to the file edit page.
+function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, navigate }) {
+  const [expanded, setExpanded] = useState(false);
+  const childFolders = allFolders.filter(f => f.parentId === folder.id);
+
+  return (
+    <li>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{ cursor: childFolders.length ? 'pointer' : 'default', padding: '2px 0' }}
+      >
+        {folder.name} {childFolders.length ? (expanded ? '[-]' : '[+]') : ''}
+      </div>
+      {expanded && (
+        <ul style={{ paddingLeft: "20px" }}>
+          {(filesByFolder[folder.id] || []).map(file => (
+            <li key={file.id} style={{ display: 'flex', alignItems: 'center' }}>
+              <span style={{ flex: 1 }}>{formatFileName(file.filename)}</span>
+              {canEdit && (
+                <button
+                  onClick={() => navigate(`/project/${projectId}/file/${file.id}`)}
+                  style={{ marginLeft: "10px" }}
+                >
+                  Edit
+                </button>
+              )}
+            </li>
+          ))}
+          {childFolders.map(child => (
+            <FolderTree
+              key={child.id}
+              folder={child}
+              allFolders={allFolders}
+              filesByFolder={filesByFolder}
+              canEdit={canEdit}
+              projectId={projectId}
+              navigate={navigate}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
 
 export default function ProjectDetailPage() {
-  // Extract projectId from the route parameter (ensure your route is defined as "/project/:id")
   const { id: projectId } = useParams();
+  const navigate = useNavigate();
   console.log("ProjectDetailPage projectId:", projectId);
 
   const [project, setProject] = useState(null);
   const [team, setTeam] = useState([]);
+  const [userNames, setUserNames] = useState({});
   const [folders, setFolders] = useState([]);
-  const [filesByFolder, setFilesByFolder] = useState({}); // Map: folderId -> list of files
+  const [filesByFolder, setFilesByFolder] = useState({});
   const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null); // Role of the current user in this project
+  const [userRole, setUserRole] = useState(null);
+  
+  // States for file & folder creation
   const [showNewFolderForm, setShowNewFolderForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [selectedParentId, setSelectedParentId] = useState(""); // Optional parent folder for nested folder creation
+  const [selectedParentId, setSelectedParentId] = useState("");
+  
   const [showNewFileForm, setShowNewFileForm] = useState(false);
   const [newFileName, setNewFileName] = useState("");
-  const [selectedFolderIdForFile, setSelectedFolderIdForFile] = useState(""); // Folder for new file
+  const [selectedFolderIdForFile, setSelectedFolderIdForFile] = useState("");
+
+  // States for adding a new team member (admin only)
+  const [showAddMemberForm, setShowAddMemberForm] = useState(false);
+  const [newMemberUserId, setNewMemberUserId] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState("");
 
   // Fetch authenticated user info.
   useEffect(() => {
@@ -43,7 +108,6 @@ export default function ProjectDetailPage() {
       .then(teamData => {
         setTeam(teamData);
         if (user && teamData.length > 0) {
-          // Compare user ids as strings.
           const myRole = teamData.find(member => String(member.userId) === String(user.id));
           setUserRole(myRole ? myRole.role : null);
         }
@@ -51,13 +115,31 @@ export default function ProjectDetailPage() {
       .catch(err => console.error("Error fetching team:", err));
   }, [projectId, user]);
 
+  // Fetch user names for team members.
+  useEffect(() => {
+    if (team.length > 0) {
+      Promise.all(
+        team.map(member =>
+          fetch(`/api/users/${member.userId}`, { credentials: 'include' })
+            .then(res => res.json())
+            .catch(err => ({ id: member.userId, username: member.userId }))
+        )
+      ).then(users => {
+        const mapping = {};
+        users.forEach(u => {
+          mapping[u.id] = u.username;
+        });
+        setUserNames(mapping);
+      });
+    }
+  }, [team]);
+
   // Fetch folders in the project.
   useEffect(() => {
     fetch(`/api/folders/project/${projectId}`, { credentials: 'include' })
       .then(res => res.json())
       .then(folderData => {
         setFolders(folderData);
-        // For each folder, fetch its files.
         folderData.forEach(folder => {
           fetch(`/api/files?folderId=${folder.id}`, { credentials: 'include' })
             .then(res => res.json())
@@ -95,21 +177,15 @@ export default function ProjectDetailPage() {
   };
 
   // Handle new file creation using the CodeController endpoint.
-  // We ensure the filename has an extension—if not, we append ".txt".
   const handleCreateFile = (e) => {
     e.preventDefault();
     if (!selectedFolderIdForFile) {
       alert("Please select a folder to create the file in.");
       return;
     }
-    // Check if newFileName has a dot; if not, append '.txt'
-    const hasExtension = newFileName.includes(".");
-    const baseFileName = newFileName;
-    const fileNameWithExt = hasExtension ? baseFileName : baseFileName + ".txt";
-    // Append a timestamp for uniqueness.
-    // const uniqueFileName = fileNameWithExt + "_" + Date.now();
+    const uniqueFileName = newFileName + "_" + Date.now();
     const fileData = {
-      filename: fileNameWithExt,
+      filename: uniqueFileName,
       code: "",
       folderId: Number(selectedFolderIdForFile)
     };
@@ -132,6 +208,57 @@ export default function ProjectDetailPage() {
       .catch(err => console.error("Error creating file:", err));
   };
 
+  // Handle adding a new team member.
+  const handleAddMember = (e) => {
+    e.preventDefault();
+    // Check if the user exists.
+    fetch(`/api/users/${newMemberUserId}`, { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error("User not found");
+        }
+        return res.json();
+      })
+      .then(() => {
+        const data = {
+          userId: newMemberUserId,
+          projectId: Number(projectId),
+          role: newMemberRole
+        };
+        fetch('/api/project-user-roles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(data)
+        })
+          .then(res => res.json())
+          .then(addedMember => {
+            setTeam([...team, addedMember]);
+            setShowAddMemberForm(false);
+            setNewMemberUserId("");
+            setNewMemberRole("");
+          })
+          .catch(err => console.error("Error adding member:", err));
+      })
+      .catch(err => alert("Error adding member: " + err.message));
+  };
+
+  // Handle removing a team member.
+  const handleRemoveMember = (roleId) => {
+    fetch(`/api/project-user-roles/${roleId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+      .then(res => {
+        if (res.ok) {
+          setTeam(team.filter(member => member.id !== roleId));
+        } else {
+          throw new Error("Failed to remove member");
+        }
+      })
+      .catch(err => alert("Error removing member: " + err.message));
+  };
+
   if (!user || userRole === null) {
     return (
       <div style={{ padding: "40px" }}>
@@ -141,6 +268,9 @@ export default function ProjectDetailPage() {
   }
 
   const canEdit = (userRole === "admin" || userRole === "editor");
+
+  // Build tree of folders: top-level folders have parentId null.
+  const topLevelFolders = folders.filter(f => f.parentId == null);
 
   return (
     <div style={{ display: "flex", padding: "20px" }}>
@@ -153,20 +283,52 @@ export default function ProjectDetailPage() {
           <ul>
             {team.map(member => (
               <li key={member.id}>
-                {member.userId} - {member.role}
-                {userRole === "admin" && (
-                  <button onClick={() => alert(`Edit team member ${member.userId}`)} style={{ marginLeft: "5px" }}>
-                    Edit
-                  </button>
+                {`${userNames[member.userId] || member.userId} - ${member.role}`}
+                {String(member.userId) !== String(project.owner) && userRole === "admin" && (
+                  <>
+                    <button
+                      onClick={() => alert(`Edit role for ${member.userId}`)}
+                      style={{ marginLeft: "5px" }}
+                    >
+                      Edit Role
+                    </button>
+                    <button
+                      onClick={() => handleRemoveMember(member.id)}
+                      style={{ marginLeft: "5px" }}
+                    >
+                      Remove
+                    </button>
+                  </>
                 )}
               </li>
             ))}
           </ul>
         )}
         {userRole === "admin" && (
-          <button onClick={() => alert("Add team member functionality")}>
-            Manage Team
-          </button>
+          <div style={{ marginTop: "10px" }}>
+            <button onClick={() => setShowAddMemberForm(!showAddMemberForm)}>
+              {showAddMemberForm ? "Cancel Add Member" : "Add Member"}
+            </button>
+            {showAddMemberForm && (
+              <form onSubmit={handleAddMember} style={{ marginTop: "10px" }}>
+                <input
+                  type="text"
+                  placeholder="User ID"
+                  value={newMemberUserId}
+                  onChange={e => setNewMemberUserId(e.target.value)}
+                  required
+                  style={{ marginRight: "10px" }}
+                />
+                <select value={newMemberRole} onChange={e => setNewMemberRole(e.target.value)} required>
+                  <option value="">Select Role</option>
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button type="submit" style={{ marginLeft: "10px" }}>Add</button>
+              </form>
+            )}
+          </div>
         )}
       </div>
 
@@ -177,83 +339,73 @@ export default function ProjectDetailPage() {
           <p>No folders available.</p>
         ) : (
           <ul>
-            {folders.map(folder => (
-              <li key={folder.id}>
-                <strong>{folder.name}</strong>
-                <ul>
-                  {(filesByFolder[folder.id] || []).map(file => (
-                    <li key={file.id}>
-                      {file.filename}
-                      {canEdit && (
-                        <button onClick={() => alert(`Edit file ${file.id}`)} style={{ marginLeft: "10px" }}>
-                          Edit
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </li>
+            {topLevelFolders.map(folder => (
+              <FolderTree
+                key={folder.id}
+                folder={folder}
+                allFolders={folders}
+                filesByFolder={filesByFolder}
+                canEdit={canEdit}
+                projectId={projectId}
+                navigate={navigate}
+              />
             ))}
           </ul>
         )}
 
-        {canEdit && (
-          <div style={{ marginTop: "20px" }}>
-            <button onClick={() => setShowNewFolderForm(!showNewFolderForm)}>
-              {showNewFolderForm ? "Cancel New Folder" : "+ New Folder"}
-            </button>
-            {showNewFolderForm && (
-              <form onSubmit={handleCreateFolder} style={{ marginTop: "10px" }}>
-                <input
-                  type="text"
-                  placeholder="Folder Name"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  required
-                  style={{ marginRight: "10px" }}
-                />
-                <select value={selectedParentId} onChange={(e) => setSelectedParentId(e.target.value)}>
-                  <option value="">No Parent (Top Level)</option>
-                  {folders.map(fold => (
-                    <option key={fold.id} value={fold.id}>{fold.name}</option>
-                  ))}
-                </select>
-                <button type="submit" style={{ marginLeft: "10px" }}>Create Folder</button>
-              </form>
-            )}
-          </div>
-        )}
+        <div style={{ marginTop: "20px" }}>
+          <button onClick={() => setShowNewFolderForm(!showNewFolderForm)}>
+            {showNewFolderForm ? "Cancel New Folder" : "+ New Folder"}
+          </button>
+          {showNewFolderForm && (
+            <form onSubmit={handleCreateFolder} style={{ marginTop: "10px" }}>
+              <input
+                type="text"
+                placeholder="Folder Name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                required
+                style={{ marginRight: "10px" }}
+              />
+              <select value={selectedParentId} onChange={(e) => setSelectedParentId(e.target.value)}>
+                <option value="">No Parent (Top Level)</option>
+                {folders.map(fold => (
+                  <option key={fold.id} value={fold.id}>{fold.name}</option>
+                ))}
+              </select>
+              <button type="submit" style={{ marginLeft: "10px" }}>Create Folder</button>
+            </form>
+          )}
+        </div>
 
-        {canEdit && (
-          <div style={{ marginTop: "20px" }}>
-            <button onClick={() => setShowNewFileForm(!showNewFileForm)}>
-              {showNewFileForm ? "Cancel New File" : "+ New File"}
-            </button>
-            {showNewFileForm && (
-              <form onSubmit={handleCreateFile} style={{ marginTop: "10px" }}>
-                <input
-                  type="text"
-                  placeholder="File Name"
-                  value={newFileName}
-                  onChange={(e) => setNewFileName(e.target.value)}
-                  required
-                  style={{ marginRight: "10px" }}
-                />
-                <select
-                  value={selectedFolderIdForFile}
-                  onChange={(e) => setSelectedFolderIdForFile(e.target.value)}
-                  required
-                >
-                  <option value="">Select Folder</option>
-                  {folders.map(fold => (
-                    <option key={fold.id} value={fold.id}>{fold.name}</option>
-                  ))}
-                </select>
-                <button type="submit" style={{ marginLeft: "10px" }}>Create File</button>
-              </form>
-            )}
-          </div>
-        )}
+        <div style={{ marginTop: "20px" }}>
+          <button onClick={() => setShowNewFileForm(!showNewFileForm)}>
+            {showNewFileForm ? "Cancel New File" : "+ New File"}
+          </button>
+          {showNewFileForm && (
+            <form onSubmit={handleCreateFile} style={{ marginTop: "10px" }}>
+              <input
+                type="text"
+                placeholder="File Name"
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                required
+                style={{ marginRight: "10px" }}
+              />
+              <select
+                value={selectedFolderIdForFile}
+                onChange={(e) => setSelectedFolderIdForFile(e.target.value)}
+                required
+              >
+                <option value="">Select Folder</option>
+                {folders.map(fold => (
+                  <option key={fold.id} value={fold.id}>{fold.name}</option>
+                ))}
+              </select>
+              <button type="submit" style={{ marginLeft: "10px" }}>Create File</button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );

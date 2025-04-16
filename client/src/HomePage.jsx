@@ -46,16 +46,29 @@ export default function HomePage() {
       .catch(err => console.error('Error fetching user roles:', err));
   };
 
+  const handleLogout = () => {
+    fetch("http://localhost:8080/logout", { 
+      method: "POST", 
+      credentials: "include" 
+    })
+      .then(response => {
+        if (response.ok) {
+          // Use replace to force navigation and full reload to home page
+          window.location.replace("/");
+        } else {
+          console.error("Logout failed");
+        }
+      })
+      .catch(err => console.error("Error logging out:", err));
+      window. location. reload();
+  };
+
   const handleLogin = () => {
     window.location.href = "http://localhost:8080/oauth2/authorization/github?flow=login";
   };
 
   const handleSignup = () => {
     window.location.href = "http://localhost:8080/oauth2/authorization/github?flow=signup";
-  };
-
-  const handleLogout = () => {
-    window.location.href = "http://localhost:8080/logout";
   };
 
   if (!user) {

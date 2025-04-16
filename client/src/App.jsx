@@ -4,6 +4,7 @@ import HomePage from './HomePage';
 import ProjectPage from './ProjectPage';
 import FilePage from './FilePage';
 import ProjectDetailPage from './ProjectDetailPage';
+import DynamicCodeEditorPage from './DynamicCodeEditorPage';
 
 function App() {
   return (
@@ -11,7 +12,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/project/:id" element={<ProjectDetailPage />} />
-        <Route path="/project/:projectId/:fileId" element={<FilePage />} />
+        <Route path="/project/:projectId/file/:fileId" element={<DynamicCodeEditorPage />} />
       </Routes>
     </BrowserRouter>
   );
