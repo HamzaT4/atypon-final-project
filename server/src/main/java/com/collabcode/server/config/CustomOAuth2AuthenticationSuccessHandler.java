@@ -28,30 +28,27 @@ public class CustomOAuth2AuthenticationSuccessHandler implements AuthenticationS
                                         HttpServletResponse response,
                                         Authentication authentication)
             throws IOException, ServletException {
-            System.out.println(">>>>> CustomOAuth2AuthenticationSuccessHandler invoked <<<<<");
-
         if (authentication instanceof OAuth2AuthenticationToken token) {
             Map<String, Object> attributes = token.getPrincipal().getAttributes();
+            // Use GitHub's "id" as unique identifier. Adjust if your attributes differ.
             String githubId = String.valueOf(attributes.get("id"));
             String username = (String) attributes.get("login");
+            // Use email if provided; otherwise, use a fallback.
             String email = (String) attributes.getOrDefault("email", username + "@github.com");
 
             User user = userRepository.findById(githubId).orElse(null);
             if (user == null) {
-                // This is a new signup event.
-                user = new User();
-                user.setId(githubId);
-                user.setUsername(username);
-                user.setEmail(email);
+                // If the user does not exist, create a new record (i.e. signup flow)
+                user = new User(githubId, username, email);
                 userRepository.save(user);
                 logger.info("Signup successful: New user created with username '{}' and GitHub ID '{}'", username, githubId);
             } else {
-                // This is a login event.
                 logger.info("Login successful: Existing user '{}' (GitHub ID '{}') logged in", username, githubId);
             }
-            // Redirect to the public URL after successful authentication.
+            // Redirect to your public home page (served via Nginx on http://localhost)
             response.sendRedirect("http://localhost/");
         } else {
+            // If not an OAuth2 token, do a simple redirect
             response.sendRedirect("http://localhost/");
         }
     }
