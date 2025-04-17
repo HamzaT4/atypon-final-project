@@ -6,21 +6,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
- * Filesystem façade.  All filenames are given *relative* to baseDir,
+ * Filesystem façade. All filenames are given *relative* to baseDir,
  * where baseDir is /data/projects inside the container.
  */
 @RestController
 public class FileController {
 
-    @Value("${filesystem.base-dir}")            // -> /data/projects
+    @Value("${filesystem.base-dir}")  // -> /data/projects
     private String baseDir;
 
     private final SnapshotRepository snapshots;
@@ -29,23 +29,45 @@ public class FileController {
         this.snapshots = snapshots;
     }
 
+    /**
+     * GET /snapshots?fileId=<fileId>
+     * Returns all snapshots whose filename column exactly equals fileId.
+     */
+    @GetMapping("/snapshots")
+    public ResponseEntity<List<Snapshot>> getSnapshots(@RequestParam String fileId) {
+        List<Snapshot> snaps = snapshots.findByFilename(fileId);
+        return ResponseEntity.ok(snaps);
+    }
+
     /* ───────────────────────────── SAVE ────────────────────────────── */
 
     @PostMapping("/save")
     public FileSystemResponse saveFile(@RequestBody SnapshotRequest req) {
         FileSystemResponse rsp = new FileSystemResponse();
         try {
+            Objects.requireNonNull(req.fileId,   "fileId is null");
             Objects.requireNonNull(req.filename, "filename is null");
-            Objects.requireNonNull(req.content , "content  is null");
+            Objects.requireNonNull(req.content,  "content is null");
+            Objects.requireNonNull(req.author,   "author is null");
+            Objects.requireNonNull(req.summary,  "summary is null");
 
+            // write to disk (unchanged)
             Path filePath = Paths.get(baseDir).resolve(req.filename);
             Files.createDirectories(filePath.getParent());
-            Files.writeString(filePath, req.content,
-                              StandardOpenOption.CREATE,
-                              StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(
+                filePath, req.content,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING
+            );
 
-            snapshots.save(new Snapshot(req.filename, "anonymous",
-                                        LocalDateTime.now(), "snapshot"));
+            // save snapshot record using only the fileId
+            snapshots.save(new Snapshot(
+                req.fileId,
+                req.author,
+                LocalDateTime.now(),
+                req.summary
+            ));
+
             rsp.message = "saved -> " + req.filename;
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -63,17 +85,13 @@ public class FileController {
             if (!Files.exists(p))
                 return ResponseEntity.status(404).body("File not found: " + filename);
             return ResponseEntity.ok(Files.readString(p));
-        } catch (IOException e) {
+        } catch (Exception e) {
             return ResponseEntity.status(500).body("Read error: " + e.getMessage());
         }
     }
 
     /* ────────────────────── LATEST SNAPSHOT ───────────────────────── */
 
-    /**
-     * GET /latest?projectId=11&fileDir=<fileId‑fileName‑ext>
-     * Returns the freshest file inside that directory.
-     */
     @GetMapping("/latest")
     public ResponseEntity<LatestResponse> latest(@RequestParam Long projectId,
                                                  @RequestParam String fileDir) {
@@ -82,9 +100,9 @@ public class FileController {
 
         try (Stream<Path> stream = Files.list(dir)) {
             Path latest = stream
-                    .filter(Files::isRegularFile)
-                    .max(Comparator.comparing(p -> p.getFileName().toString()))
-                    .orElse(null);
+                .filter(Files::isRegularFile)
+                .max(Comparator.comparing(p -> p.getFileName().toString()))
+                .orElse(null);
             if (latest == null) return ResponseEntity.status(404).build();
 
             LatestResponse res = new LatestResponse();
@@ -103,7 +121,7 @@ public class FileController {
         try {
             Files.createDirectories(Paths.get(baseDir, projectId));
             return ResponseEntity.ok("project created");
-        } catch (IOException e) {
+        } catch (Exception e) {
             return ResponseEntity.status(500).body("Error: " + e.getMessage());
         }
     }
@@ -113,10 +131,11 @@ public class FileController {
         try {
             Path p = Paths.get(baseDir, projectId);
             if (Files.exists(p))
-                Files.walk(p).sorted(Comparator.reverseOrder())
+                Files.walk(p)
+                     .sorted(Comparator.reverseOrder())
                      .forEach(f -> f.toFile().delete());
             return ResponseEntity.ok("project deleted");
-        } catch (IOException e) {
+        } catch (Exception e) {
             return ResponseEntity.status(500).body("Error: " + e.getMessage());
         }
     }
@@ -125,18 +144,31 @@ public class FileController {
     public ResponseEntity<String> createFolder(@RequestParam Long projectId,
                                                @RequestParam String folderName) {
         try {
-            Files.createDirectories(Paths.get(baseDir,
-                                              String.valueOf(projectId),
-                                              folderName));
+            Files.createDirectories(
+                Paths.get(baseDir, String.valueOf(projectId), folderName)
+            );
             return ResponseEntity.ok("folder created");
-        } catch (IOException e) {
+        } catch (Exception e) {
             return ResponseEntity.status(500).body("Error: " + e.getMessage());
         }
     }
 
     /* ───────────────────────────── DTOs ───────────────────────────── */
 
-    static class SnapshotRequest { public String filename; public String content; }
-    static class FileSystemResponse { public String message; }
-    static class LatestResponse { public String snapshotName; public String content; }
+    public static class SnapshotRequest {
+        public String fileId;
+        public String filename;
+        public String content;
+        public String author;
+        public String summary;
+    }
+
+    public static class FileSystemResponse {
+        public String message;
+    }
+
+    public static class LatestResponse {
+        public String snapshotName;
+        public String content;
+    }
 }

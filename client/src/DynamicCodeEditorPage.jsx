@@ -9,6 +9,7 @@ function formatFileName(name) {
   return /^\d+$/.test(last) ? parts.slice(0, -1).join('_') : name;
 }
 
+// Recursively render folder tree
 function FolderTree({ folder, allFolders, filesByFolder, projectId }) {
   const [expanded, setExpanded] = useState(false);
   const children = allFolders.filter(f => f.parentId === folder.id);
@@ -21,7 +22,6 @@ function FolderTree({ folder, allFolders, filesByFolder, projectId }) {
       >
         {folder.name} {children.length ? (expanded ? '[-]' : '[+]') : ''}
       </div>
-
       {expanded && (
         <ul style={{ paddingLeft: 20 }}>
           {(filesByFolder[folder.id] || []).map(file => (
@@ -46,29 +46,41 @@ function FolderTree({ folder, allFolders, filesByFolder, projectId }) {
   );
 }
 
-/* ─────────────────────────── Page ────────────────────────────── */
+// Format timestamp nicely
+function formatTimestamp(ts) {
+  try {
+    const base = ts.split('.')[0].replace(' ', 'T');
+    const d    = new Date(base);
+    return d.toLocaleString();
+  } catch {
+    return ts;
+  }
+}
+
+/* ─────────────────────────── Page Component ───────────────────── */
 
 export default function DynamicCodeEditorPage() {
   const { projectId, fileId } = useParams();
   const navigate               = useNavigate();
 
   /* ------------- state ------------- */
-  const [user, setUser]                 = useState(null);
-  const [userRole, setUserRole]         = useState(null);
-  const [folders, setFolders]           = useState([]);
+  const [user, setUser]                   = useState(null);
+  const [userRole, setUserRole]           = useState(null);
+  const [folders, setFolders]             = useState([]);
   const [filesByFolder, setFilesByFolder] = useState({});
-  const [filename, setFilename]         = useState('');
+  const [filename, setFilename]           = useState('');
   const [currentFolderId, setCurrentFolderId] = useState(null);
 
-  const [code, setCode]     = useState('');
-  const [output, setOutput] = useState('');
+  const [code, setCode]           = useState('');
+  const [output, setOutput]       = useState('');
+  const [snapshots, setSnapshots] = useState([]);
+  const [expandedSnapshots, setExpandedSnapshots] = useState({});
 
   /* ------------- auth / role ------------- */
   useEffect(() => {
     fetch('/api/user-auth', { credentials: 'include' })
       .then(r => r.json()).then(setUser).catch(console.error);
   }, []);
-
   useEffect(() => {
     if (!projectId || !user) return;
     fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' })
@@ -100,30 +112,39 @@ export default function DynamicCodeEditorPage() {
   /* ------------- when a file is selected ------------- */
   useEffect(() => {
     if (!fileId) return;
-
-    /* locate metadata in our cached lists */
     let meta = null;
     Object.values(filesByFolder).some(list => {
       const found = list.find(f => f.id === fileId);
       if (found) { meta = found; return true; }
       return false;
     });
-
-    if (!meta) { setFilename('untitled.txt'); setCode(''); return; }
-
+    if (!meta) {
+      setFilename('untitled.txt');
+      setCode('');
+      setSnapshots([]);
+      return;
+    }
     setFilename(meta.filename);
     setCurrentFolderId(meta.folderId);
 
-    /* pull latest snapshot */
+    // latest code
     fetch(`/api/code/latest?fileId=${fileId}`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then(data => setCode(data ? data.content : ''))
       .catch(() => setCode(''));
+
+    // all snapshots
+    fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(setSnapshots)
+      .catch(err => {
+        console.error('Error fetching snapshots:', err);
+        setSnapshots([]);
+      });
   }, [fileId, filesByFolder]);
 
   /* ------------- helpers ------------- */
-
-  async function saveSnapshot() {
+  async function saveSnapshot(summaryText) {
     const res = await fetch('/api/code', {
       method: 'POST',
       credentials: 'include',
@@ -131,20 +152,30 @@ export default function DynamicCodeEditorPage() {
       body: JSON.stringify({
         filename: filename || 'untitled.txt',
         code,
-        folderId: currentFolderId
+        folderId: currentFolderId,
+        summary: summaryText
       })
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
-
-  const handleSave = () =>
-    saveSnapshot().then(s => console.log('Snapshot:', s.snapshotName))
-                  .catch(e => alert(e.message));
-
-  const handleRun = () =>
-    saveSnapshot()
+  const handleSave = () => {
+    const summary = window.prompt("Snapshot summary:", "");
+    if (summary === null) return;
+    saveSnapshot(summary)
+      .then(() => fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' }))
+      .then(r => r.ok ? r.json() : [])
+      .then(setSnapshots)
+      .catch(e => alert(e.message));
+  };
+  const handleRun = () => {
+    const summary = window.prompt("Snapshot summary (will be executed):", "");
+    if (summary === null) return;
+    saveSnapshot(summary)
       .then(async ({ fileId: fid, snapshotName }) => {
+        const snaps = await fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' })
+                           .then(r => r.ok ? r.json() : []);
+        setSnapshots(snaps);
         const r = await fetch(
           `/api/execute?fileId=${fid}&snapshotName=${encodeURIComponent(snapshotName)}`,
           { method: 'POST', credentials: 'include' }
@@ -152,28 +183,26 @@ export default function DynamicCodeEditorPage() {
         setOutput(await r.text());
       })
       .catch(e => setOutput('Execution failed: ' + e.message));
+  };
+  function toggleSnapshot(id) {
+    setExpandedSnapshots(prev => ({ ...prev, [id]: !prev[id] }));
+  }
 
-  /* ------------- guards ------------- */
+  // Guard
   if (!user || userRole === null)
     return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
 
-  const canEdit = userRole === 'admin' || userRole === 'editor';
+  const canEdit    = userRole === 'admin' || userRole === 'editor';
   const topFolders = folders.filter(f => f.parentId == null);
 
-  /* ------------- render ------------- */
+  /* ───────────────────────── render ───────────────────────────── */
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
 
-      {/* upper section */}
+      {/* upper */}
       <div style={{ display: 'flex', flex: 1 }}>
-
-        {/* left – tree */}
-        <div style={{
-          width: '20%',
-          borderRight: '1px solid #ccc',
-          overflowY: 'auto',
-          padding: 10
-        }}>
+        {/* file tree */}
+        <div style={{ width: '20%', borderRight: '1px solid #ccc', overflowY: 'auto', padding: 10 }}>
           <h3>Files</h3>
           <ul>
             {topFolders.map(f => (
@@ -188,7 +217,7 @@ export default function DynamicCodeEditorPage() {
           </ul>
         </div>
 
-        {/* middle – editor */}
+        {/* editor */}
         <div style={{ width: '60%', padding: 10 }}>
           <h3>Editor {filename && `– ${filename}`}</h3>
           <textarea
@@ -205,19 +234,64 @@ export default function DynamicCodeEditorPage() {
           )}
         </div>
 
-        {/* right – stub for future version history */}
-        <div style={{
-          width: '20%',
-          borderLeft: '1px solid #ccc',
-          overflowY: 'auto',
-          padding: 10
-        }}>
+        {/* version control */}
+        <div style={{ width: '20%', borderLeft: '1px solid #ccc', overflowY: 'auto', padding: 10 }}>
           <h3>Version Control</h3>
-          <p>Coming soon…</p>
+          {snapshots.length === 0 ? (
+            <p>No snapshots yet.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0 }}>
+              {snapshots.map(s => (
+                <li key={s.id} style={{ marginBottom: 8 }}>
+                  <div
+                    onClick={() => toggleSnapshot(s.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: '#f0f0f0',
+                      color: '#000',
+                      padding: '4px',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span style={{ marginRight: 8 }}>
+                      {expandedSnapshots[s.id] ? '–' : '+'}
+                    </span>
+                    <span style={{ fontWeight: 'bold', marginRight: 8 }}>
+                      {s.id}
+                    </span>
+                    <span style={{ marginRight: 8 }}>{s.author}</span>
+                    <span style={{ marginRight: 8, fontSize: '0.9em', color: '#555' }}>
+                      {formatTimestamp(s.timestamp)}
+                    </span>
+                    <span style={{ flex: 1, fontStyle: 'italic' }}>
+                      {s.summary}
+                    </span>
+                    <button disabled style={{ marginLeft: 8 }}>Revert</button>
+                  </div>
+                  {expandedSnapshots[s.id] && (
+                    <div style={{
+                      marginLeft: 24,
+                      marginTop: 4,
+                      padding: '4px',
+                      background: '#f9f9f9',
+                      color: '#333',
+                      fontSize: '0.9em',
+                      borderRadius: '4px'
+                    }}>
+                      {/* diff log placeholder */}
+                      Change log placeholder...
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
-      {/* bottom – console */}
+      {/* console */}
       <div style={{
         height: '20%',
         borderTop: '1px solid #ccc',
