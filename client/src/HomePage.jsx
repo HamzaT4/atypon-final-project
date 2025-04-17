@@ -6,9 +6,9 @@ export default function HomePage() {
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
   const [userRoles, setUserRoles] = useState({});
+  const [newProjectName, setNewProjectName] = useState("");
 
   useEffect(() => {
-    // Fetch user authentication details
     fetch('/api/user-auth', { credentials: 'include' })
       .then(response => {
         if (response.ok) return response.json();
@@ -47,20 +47,19 @@ export default function HomePage() {
   };
 
   const handleLogout = () => {
-    fetch("http://localhost:8080/logout", { 
-      method: "POST", 
-      credentials: "include" 
+    fetch("http://localhost:8080/logout", {
+      method: "POST",
+      credentials: "include"
     })
       .then(response => {
         if (response.ok) {
-          // Use replace to force navigation and full reload to home page
           window.location.replace("/");
         } else {
           console.error("Logout failed");
         }
       })
       .catch(err => console.error("Error logging out:", err));
-      window. location. reload();
+    window.location.reload();
   };
 
   const handleLogin = () => {
@@ -69,6 +68,28 @@ export default function HomePage() {
 
   const handleSignup = () => {
     window.location.href = "http://localhost:8080/oauth2/authorization/github?flow=signup";
+  };
+
+  const handleCreateProject = () => {
+    if (!newProjectName.trim()) return;
+
+    fetch('/api/projects', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newProjectName })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to create project");
+        return res.json();
+      })
+      .then(() => {
+        setNewProjectName('');
+        fetchMyProjects();
+      })
+      .catch(err => {
+        alert("Error: " + err.message);
+      });
   };
 
   if (!user) {
@@ -89,7 +110,20 @@ export default function HomePage() {
       <div style={{ padding: '40px' }}>
         <h1>Welcome, {user.login || user.username}!</h1>
         <button onClick={handleLogout} style={{ marginBottom: '20px' }}>Logout</button>
+
         <h2>Your Projects</h2>
+
+        <div style={{ marginBottom: '20px' }}>
+          <input
+            type="text"
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            placeholder="New project name"
+            style={{ padding: '5px', marginRight: '10px' }}
+          />
+          <button onClick={handleCreateProject}>Create</button>
+        </div>
+
         {projects.length === 0 ? (
           <p>No projects found.</p>
         ) : (

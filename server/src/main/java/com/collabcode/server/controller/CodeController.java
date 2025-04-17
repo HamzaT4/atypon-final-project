@@ -166,6 +166,28 @@ public class CodeController {
         }
     }
 
+        /* ───────────── NEW ENDPOINT for specific snapshot content ───────────── */
+        @GetMapping("/snapshot-content")
+        public ResponseEntity<String> getSnapshotContent(
+                @RequestParam String projectId,
+                @RequestParam String fileId,
+                @RequestParam String filename,
+                @RequestParam String timestamp
+        ) {
+            try {
+                String fileDir = fileId + "-" + filename.replace('.', '-');
+                String ext = filename.substring(filename.lastIndexOf('.'));
+                String snapName = fileId + "_" + timestamp.replace(":", "").replace("-", "").replace(" ", "_") + ext;
+                String relPath = projectId + "/" + fileDir + "/" + snapName;
+    
+                ResponseEntity<String> rsp = rest.getForEntity(fsUrl + "/read?filename=" + relPath, String.class);
+                return ResponseEntity.status(rsp.getStatusCode()).body(rsp.getBody());
+            } catch (Exception e) {
+                return ResponseEntity.status(500).body("Error retrieving snapshot: " + e.getMessage());
+            }
+        }
+    
+
     /* ─────────────────────────── DTOS ─────────────────────────────── */
 
     public static class CodeRequest {

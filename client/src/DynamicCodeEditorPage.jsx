@@ -143,6 +143,64 @@ export default function DynamicCodeEditorPage() {
       });
   }, [fileId, filesByFolder]);
 
+
+
+  async function handleRevert(snap) {
+    if (!window.confirm(`Revert to snapshot #${snap.id}?`)) return;
+  
+    try {
+      // extract projectId, fileId, filename, timestamp from context and snapshot
+      const timestamp = snap.timestamp.split('.')[0].replace('T', ' '); // formatted to match pattern
+      const params = new URLSearchParams({
+        projectId,
+        fileId,
+        filename,
+        timestamp
+      });
+  
+      const res = await fetch(`/api/code/snapshot-content?${params.toString()}`, {
+        credentials: 'include'
+      });
+  
+      if (!res.ok) throw new Error(await res.text());
+  
+      const snapshotCode = await res.text();
+  
+      // post it to save as a new snapshot
+      const saveRes = await fetch('/api/code', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename,
+          folderId: currentFolderId,
+          summary: snap.summary,
+          code: snapshotCode
+        })
+      });
+  
+      if (!saveRes.ok) throw new Error(await saveRes.text());
+  
+      // refresh everything
+      const newSnaps = await fetch(`/api/code/snapshots?fileId=${fileId}`, {
+        credentials: 'include'
+      }).then(r => r.json());
+  
+      const latest = await fetch(`/api/code/latest?fileId=${fileId}`, {
+        credentials: 'include'
+      }).then(r => r.json());
+  
+      setSnapshots(newSnaps);
+      setCode(latest.content || '');
+  
+    } catch (err) {
+      alert('Failed to revert snapshot: ' + err.message);
+    }
+  }
+  
+
+
+
   /* ------------- helpers ------------- */
   async function saveSnapshot(summaryText) {
     const res = await fetch('/api/code', {
@@ -235,7 +293,13 @@ export default function DynamicCodeEditorPage() {
         </div>
 
         {/* version control */}
-        <div style={{ width: '20%', borderLeft: '1px solid #ccc', overflowY: 'auto', padding: 10 }}>
+        <div style={{
+          width: '20%',
+          borderLeft: '1px solid #ccc',
+          padding: 10,
+          overflowY: 'auto',
+          height: 'calc(100vh - 300px)'
+        }}>
           <h3>Version Control</h3>
           {snapshots.length === 0 ? (
             <p>No snapshots yet.</p>
@@ -268,8 +332,12 @@ export default function DynamicCodeEditorPage() {
                     <span style={{ flex: 1, fontStyle: 'italic' }}>
                       {s.summary}
                     </span>
-                    <button disabled style={{ marginLeft: 8 }}>Revert</button>
-                  </div>
+                    {snapshots[snapshots.length - 1]?.id === s.id ? (
+                        <span style={{ marginLeft: 8, color: '#888', fontSize: '0.9em' }}>working here</span>
+                      ) : (
+                        <button onClick={() => handleRevert(s)} style={{ marginLeft: 8 }}>Revert</button>
+                      )}
+                    </div>
                   {expandedSnapshots[s.id] && (
                     <div style={{
                       marginLeft: 24,

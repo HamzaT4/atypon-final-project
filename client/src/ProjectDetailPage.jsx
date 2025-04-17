@@ -2,24 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
-// Helper function to strip a trailing “_timestamp” from filenames
 function formatFileName(name) {
   const parts = name.split('_');
   const last = parts[parts.length - 1];
   return /^\d+$/.test(last) ? parts.slice(0, -1).join('_') : name;
 }
 
-// Recursive folder tree
 function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, navigate }) {
   const [expanded, setExpanded] = useState(false);
   const children = allFolders.filter(f => f.parentId === folder.id);
 
   return (
     <li>
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{ cursor: children.length ? 'pointer' : 'default', padding: '2px 0' }}
-      >
+      <div onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', padding: '2px 0' }}>
         {folder.name} {children.length ? (expanded ? '[-]' : '[+]') : ''}
       </div>
       {expanded && (
@@ -74,7 +69,23 @@ export default function ProjectDetailPage() {
   const [newFileName, setNewFileName] = useState('');
   const [selectedFolderIdForFile, setSelectedFolderIdForFile] = useState('');
 
-  /* ---------- Fetches ---------- */
+  const fetchFoldersAndFiles = () => {
+    fetch(`/api/folders/project/${projectId}`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        setFolders(data);
+        data.forEach(f =>
+          fetch(`/api/files?folderId=${f.id}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(files =>
+              setFilesByFolder(prev => ({ ...prev, [f.id]: files }))
+            )
+            .catch(console.error)
+        );
+      })
+      .catch(console.error);
+  };
+
   useEffect(() => {
     fetch('/api/user-auth', { credentials: 'include' })
       .then(r => r.json())
@@ -118,24 +129,8 @@ export default function ProjectDetailPage() {
     }
   }, [team]);
 
-  useEffect(() => {
-    fetch(`/api/folders/project/${projectId}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => {
-        setFolders(data);
-        data.forEach(f =>
-          fetch(`/api/files?folderId=${f.id}`, { credentials: 'include' })
-            .then(r => r.json())
-            .then(files =>
-              setFilesByFolder(prev => ({ ...prev, [f.id]: files }))
-            )
-            .catch(console.error)
-        );
-      })
-      .catch(console.error);
-  }, [projectId]);
+  useEffect(fetchFoldersAndFiles, [projectId]);
 
-  /* ---------- Handlers ---------- */
   const handleCreateFolder = e => {
     e.preventDefault();
     fetch('/api/folders', {
@@ -149,11 +144,11 @@ export default function ProjectDetailPage() {
       })
     })
       .then(r => r.json())
-      .then(f => {
-        setFolders([...folders, f]);
+      .then(() => {
         setNewFolderName('');
         setSelectedParentId('');
         setShowNewFolderForm(false);
+        fetchFoldersAndFiles(); // Refresh
       })
       .catch(console.error);
   };
@@ -172,14 +167,11 @@ export default function ProjectDetailPage() {
       })
     })
       .then(r => r.json())
-      .then(f => {
-        setFilesByFolder(prev => ({
-          ...prev,
-          [selectedFolderIdForFile]: [...(prev[selectedFolderIdForFile] || []), f]
-        }));
+      .then(() => {
         setNewFileName('');
         setSelectedFolderIdForFile('');
         setShowNewFileForm(false);
+        fetchFoldersAndFiles(); // Refresh
       })
       .catch(console.error);
   };
@@ -196,17 +188,14 @@ export default function ProjectDetailPage() {
       .catch(err => alert(err.message));
   };
 
-  /* ---------- Early exits ---------- */
   if (!user || userRole === null)
     return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
 
   const canEdit = userRole === 'admin' || userRole === 'editor';
   const topFolders = folders.filter(f => f.parentId == null);
 
-  /* ---------- Render ---------- */
   return (
     <div style={{ display: 'flex', padding: 20 }}>
-      {/* Team panel */}
       <div style={{ flex: '0 0 30%', borderRight: '1px solid #ccc', paddingRight: 20 }}>
         <h2>Team</h2>
         {team.length === 0 ? (
@@ -233,15 +222,8 @@ export default function ProjectDetailPage() {
             })}
           </ul>
         )}
-
-        {userRole === 'admin' && (
-          <div style={{ marginTop: 10 }}>
-            {/* Add‑member UI omitted for brevity (unchanged) */}
-          </div>
-        )}
       </div>
 
-      {/* Folder explorer */}
       <div style={{ flex: 1, paddingLeft: 20 }}>
         <h2>Folder Structure</h2>
         {folders.length === 0 ? (
@@ -262,7 +244,7 @@ export default function ProjectDetailPage() {
           </ul>
         )}
 
-        {/* New folder form */}
+        {/* Folder form */}
         <div style={{ marginTop: 20 }}>
           <button onClick={() => setShowNewFolderForm(!showNewFolderForm)}>
             {showNewFolderForm ? 'Cancel New Folder' : '+ New Folder'}
@@ -292,7 +274,7 @@ export default function ProjectDetailPage() {
           )}
         </div>
 
-        {/* New file form */}
+        {/* File form */}
         <div style={{ marginTop: 20 }}>
           <button onClick={() => setShowNewFileForm(!showNewFileForm)}>
             {showNewFileForm ? 'Cancel New File' : '+ New File'}
