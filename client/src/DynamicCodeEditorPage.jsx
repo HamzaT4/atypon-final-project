@@ -1,48 +1,43 @@
-// src/DynamicCodeEditorPage.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 
-// Helper function to format file names by removing a trailing underscore plus digits (the timestamp)
+/* ─────────────────────────── Helpers ─────────────────────────── */
+
 function formatFileName(name) {
-  const parts = name.split("_");
-  const lastPart = parts[parts.length - 1];
-  if (/^\d+$/.test(lastPart)) {
-    return parts.slice(0, parts.length - 1).join("_");
-  }
-  return name;
+  const parts = name.split('_');
+  const last  = parts[parts.length - 1];
+  return /^\d+$/.test(last) ? parts.slice(0, -1).join('_') : name;
 }
 
-// Recursive component to render a folder as a collapsible tree with clickable file names.
-function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, navigate }) {
+function FolderTree({ folder, allFolders, filesByFolder, projectId }) {
   const [expanded, setExpanded] = useState(false);
-  const childFolders = allFolders.filter(f => f.parentId === folder.id);
+  const children = allFolders.filter(f => f.parentId === folder.id);
 
   return (
     <li>
       <div
+        style={{ cursor: children.length ? 'pointer' : 'default', padding: 2 }}
         onClick={() => setExpanded(!expanded)}
-        style={{ cursor: childFolders.length ? 'pointer' : 'default', padding: '2px 0' }}
       >
-        {folder.name} {childFolders.length ? (expanded ? '[-]' : '[+]') : ''}
+        {folder.name} {children.length ? (expanded ? '[-]' : '[+]') : ''}
       </div>
+
       {expanded && (
-        <ul style={{ paddingLeft: "20px" }}>
+        <ul style={{ paddingLeft: 20 }}>
           {(filesByFolder[folder.id] || []).map(file => (
-            <li key={file.id} style={{ display: 'flex', alignItems: 'center' }}>
+            <li key={file.id}>
               <Link to={`/project/${projectId}/file/${file.id}`}>
                 {formatFileName(file.filename)}
               </Link>
             </li>
           ))}
-          {childFolders.map(child => (
+          {children.map(ch => (
             <FolderTree
-              key={child.id}
-              folder={child}
+              key={ch.id}
+              folder={ch}
               allFolders={allFolders}
               filesByFolder={filesByFolder}
-              canEdit={canEdit}
               projectId={projectId}
-              navigate={navigate}
             />
           ))}
         </ul>
@@ -51,204 +46,186 @@ function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, nav
   );
 }
 
+/* ─────────────────────────── Page ────────────────────────────── */
+
 export default function DynamicCodeEditorPage() {
-  // Expecting route parameters: projectId and fileId
   const { projectId, fileId } = useParams();
-  const navigate = useNavigate();
-  console.log("DynamicCodeEditorPage projectId:", projectId, "fileId:", fileId);
+  const navigate               = useNavigate();
 
-  const [project, setProject] = useState(null);
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
-  const [folders, setFolders] = useState([]);
+  /* ------------- state ------------- */
+  const [user, setUser]                 = useState(null);
+  const [userRole, setUserRole]         = useState(null);
+  const [folders, setFolders]           = useState([]);
   const [filesByFolder, setFilesByFolder] = useState({});
-  const [code, setCode] = useState(""); // Code content for the selected file
-  const [output, setOutput] = useState(""); // Code execution output
-  const [filename, setFilename] = useState(""); // Metadata filename
+  const [filename, setFilename]         = useState('');
+  const [currentFolderId, setCurrentFolderId] = useState(null);
 
-  // For saving purposes, if editing existing file, we need to know its folder.
-  const [currentFolderId, setCurrentFolderId] = useState(0);
+  const [code, setCode]     = useState('');
+  const [output, setOutput] = useState('');
 
-  // Fetch authenticated user info.
+  /* ------------- auth / role ------------- */
   useEffect(() => {
     fetch('/api/user-auth', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => setUser(data))
-      .catch(err => console.error("Error fetching user:", err));
+      .then(r => r.json()).then(setUser).catch(console.error);
   }, []);
 
-  // Fetch project details.
   useEffect(() => {
-    fetch(`/api/projects/${projectId}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => setProject(data))
-      .catch(err => console.error("Error fetching project:", err));
-  }, [projectId]);
-
-  // Fetch team roles to determine current user's role in the project.
-  useEffect(() => {
+    if (!projectId || !user) return;
     fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(teamData => {
-        if (user && teamData.length > 0) {
-          const myRole = teamData.find(member => String(member.userId) === String(user.id));
-          setUserRole(myRole ? myRole.role : null);
-        }
+      .then(r => r.json())
+      .then(team => {
+        const me = team.find(m => String(m.userId) === String(user.id));
+        setUserRole(me ? me.role : null);
       })
-      .catch(err => console.error("Error fetching team roles:", err));
+      .catch(console.error);
   }, [projectId, user]);
 
-  // Fetch folders in the project.
+  /* ------------- folders & files ------------- */
   useEffect(() => {
+    if (!projectId) return;
     fetch(`/api/folders/project/${projectId}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(folderData => {
-        setFolders(folderData);
-        folderData.forEach(folder => {
-          fetch(`/api/files?folderId=${folder.id}`, { credentials: 'include' })
-            .then(res => res.json())
-            .then(files => {
-              setFilesByFolder(prev => ({ ...prev, [folder.id]: files }));
-            })
-            .catch(err => console.error(`Error fetching files for folder ${folder.id}:`, err));
-        });
+      .then(r => r.json())
+      .then(folds => {
+        setFolders(folds);
+        folds.forEach(f =>
+          fetch(`/api/files?folderId=${f.id}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(files => setFilesByFolder(p => ({ ...p, [f.id]: files })))
+            .catch(console.error)
+        );
       })
-      .catch(err => console.error("Error fetching folders:", err));
+      .catch(console.error);
   }, [projectId]);
 
-  // Instead of calling a file content endpoint (which returns 404), we search through our loaded file lists.
+  /* ------------- when a file is selected ------------- */
   useEffect(() => {
-    if (fileId) {
-      // Look through each folder's files to find the one with matching id.
-      let found = false;
-      for (let key in filesByFolder) {
-        const file = filesByFolder[key].find(f => f.id === fileId);
-        if (file) {
-          setFilename(file.filename);
-          setCurrentFolderId(file.folderId);
-          // Code content is not stored; default to empty.
-          setCode("");
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        // If not found, set filename to a default non-empty value to avoid errors.
-        setFilename("untitled.txt");
-      }
-    }
+    if (!fileId) return;
+
+    /* locate metadata in our cached lists */
+    let meta = null;
+    Object.values(filesByFolder).some(list => {
+      const found = list.find(f => f.id === fileId);
+      if (found) { meta = found; return true; }
+      return false;
+    });
+
+    if (!meta) { setFilename('untitled.txt'); setCode(''); return; }
+
+    setFilename(meta.filename);
+    setCurrentFolderId(meta.folderId);
+
+    /* pull latest snapshot */
+    fetch(`/api/code/latest?fileId=${fileId}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setCode(data ? data.content : ''))
+      .catch(() => setCode(''));
   }, [fileId, filesByFolder]);
 
-  // Handler for saving the edited code.
-  const handleSave = async () => {
-    try {
-      const res = await fetch('/api/code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        // Use the filename from state; ensure it is not empty.
-        body: JSON.stringify({ filename: filename || "untitled.txt", code, folderId: currentFolderId || 0 })
-      });
-      const data = await res.json();
-      if (!data.fileId) {
-        console.error("Save failed: fileId not returned");
-        return;
-      }
-      console.log("Code saved, snapshot:", data.snapshotName);
-    } catch (err) {
-      console.error("Save failed:", err);
-    }
-  };
+  /* ------------- helpers ------------- */
 
-  // Handler for executing the code.
-  const handleRun = async () => {
-    try {
-      // Save the code first to obtain snapshot details.
-      const saveRes = await fetch('/api/code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ filename: filename || "untitled.txt", code, folderId: currentFolderId || 0 })
-      });
-      const saveData = await saveRes.json();
-      const fileIdFromSave = saveData.fileId;
-      const snapshotName = saveData.snapshotName;
-      if (!fileIdFromSave || !snapshotName) {
-        setOutput("Execution failed: Could not get file ID or snapshot name.");
-        return;
-      }
-      const res = await fetch(`/api/execute?fileId=${fileIdFromSave}&snapshotName=${snapshotName}`, {
-        method: 'POST'
-      });
-      const outputText = await res.text();
-      setOutput(outputText);
-    } catch (err) {
-      setOutput("Execution failed: " + err.message);
-    }
-  };
-
-  if (!user || userRole === null) {
-    return (
-      <div style={{ padding: "40px" }}>
-        You are not a member of this project; you can't see its details.
-      </div>
-    );
+  async function saveSnapshot() {
+    const res = await fetch('/api/code', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: filename || 'untitled.txt',
+        code,
+        folderId: currentFolderId
+      })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
   }
 
-  // Only allow editing if the user is admin or editor.
-  const canEdit = (userRole === 'admin' || userRole === 'editor');
+  const handleSave = () =>
+    saveSnapshot().then(s => console.log('Snapshot:', s.snapshotName))
+                  .catch(e => alert(e.message));
 
+  const handleRun = () =>
+    saveSnapshot()
+      .then(async ({ fileId: fid, snapshotName }) => {
+        const r = await fetch(
+          `/api/execute?fileId=${fid}&snapshotName=${encodeURIComponent(snapshotName)}`,
+          { method: 'POST', credentials: 'include' }
+        );
+        setOutput(await r.text());
+      })
+      .catch(e => setOutput('Execution failed: ' + e.message));
+
+  /* ------------- guards ------------- */
+  if (!user || userRole === null)
+    return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
+
+  const canEdit = userRole === 'admin' || userRole === 'editor';
+  const topFolders = folders.filter(f => f.parentId == null);
+
+  /* ------------- render ------------- */
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* Top Section: Three Panels */}
-      <div style={{ display: 'flex', flex: '1 1 auto' }}>
-        {/* Left Panel: File Tree */}
-        <div style={{ width: '20%', borderRight: '1px solid #ccc', overflowY: 'auto', padding: '10px' }}>
-          <h3>File Structure</h3>
-          {folders.length === 0 ? (
-            <p>No folders available.</p>
-          ) : (
-            <ul>
-              {folders.filter(f => f.parentId == null).map(folder => (
-                <FolderTree
-                  key={folder.id}
-                  folder={folder}
-                  allFolders={folders}
-                  filesByFolder={filesByFolder}
-                  canEdit={canEdit}
-                  projectId={projectId}
-                  navigate={navigate}
-                />
-              ))}
-            </ul>
-          )}
+
+      {/* upper section */}
+      <div style={{ display: 'flex', flex: 1 }}>
+
+        {/* left – tree */}
+        <div style={{
+          width: '20%',
+          borderRight: '1px solid #ccc',
+          overflowY: 'auto',
+          padding: 10
+        }}>
+          <h3>Files</h3>
+          <ul>
+            {topFolders.map(f => (
+              <FolderTree
+                key={f.id}
+                folder={f}
+                allFolders={folders}
+                filesByFolder={filesByFolder}
+                projectId={projectId}
+              />
+            ))}
+          </ul>
         </div>
-        {/* Middle Panel: Code Editor */}
-        <div style={{ width: '60%', padding: '10px' }}>
-          <h3>Code Editor {filename && `- ${filename}`}</h3>
+
+        {/* middle – editor */}
+        <div style={{ width: '60%', padding: 10 }}>
+          <h3>Editor {filename && `– ${filename}`}</h3>
           <textarea
-            style={{ width: '100%', height: '70%', fontFamily: 'monospace', fontSize: '14px' }}
+            style={{ width: '100%', height: '70%', fontFamily: 'monospace' }}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={e => setCode(e.target.value)}
             disabled={!canEdit}
-          ></textarea>
+          />
           {canEdit && (
-            <div style={{ marginTop: '10px' }}>
+            <div style={{ marginTop: 10 }}>
               <button onClick={handleSave}>Save</button>
-              <button onClick={handleRun} style={{ marginLeft: '10px' }}>Run</button>
+              <button onClick={handleRun} style={{ marginLeft: 10 }}>Run</button>
             </div>
           )}
         </div>
-        {/* Right Panel: Version Control */}
-        <div style={{ width: '20%', borderLeft: '1px solid #ccc', overflowY: 'auto', padding: '10px' }}>
+
+        {/* right – stub for future version history */}
+        <div style={{
+          width: '20%',
+          borderLeft: '1px solid #ccc',
+          overflowY: 'auto',
+          padding: 10
+        }}>
           <h3>Version Control</h3>
-          <p>Version history coming soon...</p>
+          <p>Coming soon…</p>
         </div>
       </div>
-      {/* Bottom Section: Console Output */}
-      <div style={{ height: '20%', borderTop: '1px solid #ccc', padding: '10px', overflowY: 'auto' }}>
-        <h3>Console Output</h3>
-        <pre>{output || '// Output will appear here...'}</pre>
+
+      {/* bottom – console */}
+      <div style={{
+        height: '20%',
+        borderTop: '1px solid #ccc',
+        padding: 10,
+        overflowY: 'auto'
+      }}>
+        <h3>Console</h3>
+        <pre>{output || '// Output will appear here …'}</pre>
       </div>
     </div>
   );

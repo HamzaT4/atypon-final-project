@@ -3,6 +3,8 @@ package com.collabcode.server.controller;
 import com.collabcode.server.entity.FileMetadata;
 import com.collabcode.server.factory.FileMetadataFactory;
 import com.collabcode.server.repository.FileMetadataRepository;
+import com.collabcode.server.repository.FolderRepository;
+import com.collabcode.server.service.FileSystemClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -10,136 +12,147 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Optional;
 
+/**
+ *  –  POST /api/code         → save snapshot (with de‑duplication)
+ *  –  GET  /api/code/latest  → newest snapshot + content for a file
+ */
 @RestController
 @RequestMapping("/api/code")
 public class CodeController {
 
     @Value("${filesystem.service.url}")
-    private String filesystemServiceUrl;
+    private String fsUrl;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final FileMetadataRepository metadataRepository;
+    private final RestTemplate           rest = new RestTemplate();
+    private final FileMetadataRepository metaRepo;
+    private final FolderRepository       folderRepo;
+    private final FileSystemClient       fsClient;
 
-    public CodeController(FileMetadataRepository metadataRepository) {
-        this.metadataRepository = metadataRepository;
+    public CodeController(FileMetadataRepository metaRepo,
+                          FolderRepository folderRepo,
+                          FileSystemClient fsClient) {
+        this.metaRepo   = metaRepo;
+        this.folderRepo = folderRepo;
+        this.fsClient   = fsClient;
     }
+
+    /* ───────────────────────────── SAVE ───────────────────────────── */
 
     @PostMapping
-    public ResponseEntity<?> saveCode(@RequestBody CodeRequest request) {
+    public ResponseEntity<SaveResponse> save(@RequestBody CodeRequest req) {
+
         try {
-            String filename = request.getFilename();
-            String extension = filename.substring(filename.lastIndexOf("."));
-            FileMetadata metadata;
+            /* ----- locate or create FileMetadata ----- */
+            String filename = req.getFilename();
+            String ext      = filename.substring(filename.lastIndexOf('.'));
 
-            // Check if a file with the same filename exists in the specified folder.
-            Optional<FileMetadata> existing = metadataRepository.findAll().stream()
-                    .filter(f -> f.getFilename().equals(filename) && f.getFolderId().equals(request.getFolderId()))
-                    .findFirst();
+            FileMetadata meta = metaRepo.findAll().stream()
+                    .filter(f -> f.getFilename().equals(filename)
+                              && f.getFolderId().equals(req.getFolderId()))
+                    .findFirst()
+                    .orElseGet(() -> metaRepo.save(
+                            FileMetadataFactory.createFileMetadata(
+                                    filename, "anonymous", req.getFolderId())));
 
-            if (existing.isPresent()) {
-                // If it exists, use the existing file metadata.
-                metadata = existing.get();
-            } else {
-                // Create new FileMetadata using the factory.
-                metadata = FileMetadataFactory.createFileMetadata(filename, "anonymous", request.getFolderId());
-                metadataRepository.save(metadata);
+            Long   projectId = folderRepo.findById(req.getFolderId())
+                    .orElseThrow(() -> new RuntimeException("Folder not found"))
+                    .getProjectId();
+            String fileDir   = meta.getId() + "-" + filename.replace('.', '-');
+
+            /* ensure folder exists on FS */
+            fsClient.createFolder(projectId, fileDir);
+
+            /* ----- DE‑DUPLICATION: compare with latest snapshot ----- */
+            String latestUrl = fsUrl +
+                    "/latest?projectId=" + projectId + "&fileDir=" + fileDir;
+
+            ResponseEntity<LatestResponse> latestRsp =
+                    rest.getForEntity(latestUrl, LatestResponse.class);
+
+            if (latestRsp.getStatusCode() == HttpStatus.OK
+                && latestRsp.getBody() != null
+                && req.getCode().equals(latestRsp.getBody().getContent())) {
+
+                /* identical – no new snapshot */
+                return ResponseEntity.ok(
+                        new SaveResponse(meta.getId(),
+                                         latestRsp.getBody().getSnapshotName()));
             }
 
-            // Generate a snapshot name based on the current timestamp.
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String snapshotName = metadata.getId() + "_" + timestamp + extension;
+            /* ----- create NEW snapshot (content differs or none exists) ----- */
+            String ts   = LocalDateTime.now()
+                               .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String snap = meta.getId() + "_" + ts + ext;
+            String rel  = projectId + "/" + fileDir + "/" + snap;
 
-            // Forward the code snapshot to the filesystem service.
-            String url = filesystemServiceUrl + "/save";
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            SnapshotRequest snapshotRequest = new SnapshotRequest(snapshotName, request.getCode());
-            HttpEntity<SnapshotRequest> entity = new HttpEntity<>(snapshotRequest, headers);
-            restTemplate.postForEntity(url, entity, Void.class);
+            SnapshotRequest body = new SnapshotRequest(rel, req.getCode());
+            HttpHeaders hdr      = new HttpHeaders();
+            hdr.setContentType(MediaType.APPLICATION_JSON);
+            rest.postForEntity(fsUrl + "/save", new HttpEntity<>(body, hdr), Void.class);
 
-            return ResponseEntity.ok(new SaveResponse(metadata.getId(), snapshotName));
+            return ResponseEntity.ok(new SaveResponse(meta.getId(), rel));
+
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error saving code: " + e.getMessage());
+            return ResponseEntity.status(500).body(
+                    new SaveResponse("ERROR", "Error saving code: " + e.getMessage()));
         }
     }
 
-    // Request class for receiving file creation or code save requests.
+    /* ─────────────────────  LATEST SNAPSHOT  ─────────────────────── */
+
+    @GetMapping("/latest")
+    public ResponseEntity<LatestResponse> latest(@RequestParam String fileId) {
+        try {
+            FileMetadata meta = metaRepo.findById(fileId)
+                    .orElseThrow(() -> new RuntimeException("File not found"));
+            Long folderId  = meta.getFolderId();
+            Long projectId = folderRepo.findById(folderId)
+                    .orElseThrow(() -> new RuntimeException("Folder not found"))
+                    .getProjectId();
+            String fileDir = meta.getId() + "-" + meta.getFilename().replace('.', '-');
+
+            String url = fsUrl +
+                    "/latest?projectId=" + projectId + "&fileDir=" + fileDir;
+            ResponseEntity<LatestResponse> rsp =
+                    rest.getForEntity(url, LatestResponse.class);
+
+            return ResponseEntity.status(rsp.getStatusCode()).body(rsp.getBody());
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new LatestResponse(null,
+                            "ERROR retrieving latest snapshot: " + e.getMessage()));
+        }
+    }
+
+    /* ───────────────────────────── DTOs ──────────────────────────── */
+
     public static class CodeRequest {
-        private String code;
-        private String filename;
-        private Long folderId;
-
-        public String getCode() {
-            return code;
-        }
-
-        public void setCode(String code) {
-            this.code = code;
-        }
-
-        public String getFilename() {
-            return filename;
-        }
-
-        public void setFilename(String filename) {
-            this.filename = filename;
-        }
-
-        public Long getFolderId() {
-            return folderId;
-        }
-
-        public void setFolderId(Long folderId) {
-            this.folderId = folderId;
-        }
+        private String code; private String filename; private Long folderId;
+        public String getCode()            { return code; }
+        public void   setCode(String c)    { code = c; }
+        public String getFilename()        { return filename; }
+        public void   setFilename(String f){ filename = f; }
+        public Long   getFolderId()        { return folderId; }
+        public void   setFolderId(Long id) { folderId = id; }
     }
 
-    // Class to represent the request sent to the filesystem service.
-    public static class SnapshotRequest {
-        private String filename;
-        private String content;
+    private record SnapshotRequest(String filename, String content) { }
 
-        public SnapshotRequest(String filename, String content) {
-            this.filename = filename;
-            this.content = content;
-        }
-
-        public String getFilename() {
-            return filename;
-        }
-
-        public String getContent() {
-            return content;
-        }
-    }
-
-    // Response object returned after saving code or creating a new file.
     public static class SaveResponse {
-        private String fileId;
+        private String fileId;      // “ERROR” on failure
         private String snapshotName;
+        public SaveResponse(String f,String s){fileId=f;snapshotName=s;}
+        public String getFileId(){return fileId;}               public void setFileId(String v){fileId=v;}
+        public String getSnapshotName(){return snapshotName;}   public void setSnapshotName(String v){snapshotName=v;}
+    }
 
-        public SaveResponse(String fileId, String snapshotName) {
-            this.fileId = fileId;
-            this.snapshotName = snapshotName;
-        }
-
-        public String getFileId() {
-            return fileId;
-        }
-
-        public void setFileId(String fileId) {
-            this.fileId = fileId;
-        }
-
-        public String getSnapshotName() {
-            return snapshotName;
-        }
-
-        public void setSnapshotName(String snapshotName) {
-            this.snapshotName = snapshotName;
-        }
+    public static class LatestResponse {
+        private String snapshotName;
+        private String content;
+        public LatestResponse(){ }
+        public LatestResponse(String s,String c){snapshotName=s;content=c;}
+        public String getSnapshotName(){return snapshotName;}   public void setSnapshotName(String v){snapshotName=v;}
+        public String getContent(){return content;}             public void setContent(String v){content=v;}
     }
 }

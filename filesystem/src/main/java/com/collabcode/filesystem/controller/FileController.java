@@ -3,7 +3,6 @@ package com.collabcode.filesystem.controller;
 import com.collabcode.filesystem.entity.Snapshot;
 import com.collabcode.filesystem.repository.SnapshotRepository;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,117 +11,132 @@ import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.stream.Stream;
 
+/**
+ * Filesystem façade.  All filenames are given *relative* to baseDir,
+ * where baseDir is /data/projects inside the container.
+ */
 @RestController
 public class FileController {
 
-    @Value("${filesystem.base-dir}")
+    @Value("${filesystem.base-dir}")            // -> /data/projects
     private String baseDir;
 
-    private final SnapshotRepository snapshotRepository;
+    private final SnapshotRepository snapshots;
 
-    public FileController(SnapshotRepository snapshotRepository) {
-        this.snapshotRepository = snapshotRepository;
+    public FileController(SnapshotRepository snapshots) {
+        this.snapshots = snapshots;
     }
+
+    /* ───────────────────────────── SAVE ────────────────────────────── */
 
     @PostMapping("/save")
-    public FileSystemResponse saveFile(@RequestBody SnapshotRequest request) {
-        FileSystemResponse response = new FileSystemResponse();
+    public FileSystemResponse saveFile(@RequestBody SnapshotRequest req) {
+        FileSystemResponse rsp = new FileSystemResponse();
         try {
-            Objects.requireNonNull(request.getFilename(), "Filename must not be null");
-            Objects.requireNonNull(request.getContent(), "Code content must not be null");
+            Objects.requireNonNull(req.filename, "filename is null");
+            Objects.requireNonNull(req.content , "content  is null");
 
-            Path dirPath = Paths.get(baseDir);
-            if (!Files.exists(dirPath)) {
-                Files.createDirectories(dirPath);
-            }
+            Path filePath = Paths.get(baseDir).resolve(req.filename);
+            Files.createDirectories(filePath.getParent());
+            Files.writeString(filePath, req.content,
+                              StandardOpenOption.CREATE,
+                              StandardOpenOption.TRUNCATE_EXISTING);
 
-            Path filePath = dirPath.resolve(request.getFilename());
-            Files.writeString(filePath, request.getContent(), StandardOpenOption.CREATE);
-
-            snapshotRepository.save(new Snapshot(request.getFilename(), "anonymous", LocalDateTime.now(), "Snapshot saved"));
-
-            response.setMessage("Saved successfully: " + request.getFilename());
-        } catch (Exception e) {
-            e.printStackTrace();
-            response.setMessage("Error saving code: " + e.getMessage());
+            snapshots.save(new Snapshot(req.filename, "anonymous",
+                                        LocalDateTime.now(), "snapshot"));
+            rsp.message = "saved -> " + req.filename;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            rsp.message = "ERROR: " + ex.getMessage();
         }
-        return response;
+        return rsp;
     }
+
+    /* ───────────────────────────── READ ────────────────────────────── */
 
     @GetMapping("/read")
     public ResponseEntity<String> readFile(@RequestParam String filename) {
         try {
-            Path filePath = Paths.get(baseDir, filename);
-            if (!Files.exists(filePath)) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("File not found: " + filename);
-            }
-            String content = Files.readString(filePath);
-            return ResponseEntity.ok(content);
+            Path p = Paths.get(baseDir).resolve(filename);
+            if (!Files.exists(p))
+                return ResponseEntity.status(404).body("File not found: " + filename);
+            return ResponseEntity.ok(Files.readString(p));
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error reading file: " + e.getMessage());
+            return ResponseEntity.status(500).body("Read error: " + e.getMessage());
         }
     }
 
-    // ====== NEW: Create Project (Folder) ======
+    /* ────────────────────── LATEST SNAPSHOT ───────────────────────── */
+
+    /**
+     * GET /latest?projectId=11&fileDir=<fileId‑fileName‑ext>
+     * Returns the freshest file inside that directory.
+     */
+    @GetMapping("/latest")
+    public ResponseEntity<LatestResponse> latest(@RequestParam Long projectId,
+                                                 @RequestParam String fileDir) {
+        Path dir = Paths.get(baseDir, String.valueOf(projectId), fileDir);
+        if (!Files.exists(dir)) return ResponseEntity.status(404).build();
+
+        try (Stream<Path> stream = Files.list(dir)) {
+            Path latest = stream
+                    .filter(Files::isRegularFile)
+                    .max(Comparator.comparing(p -> p.getFileName().toString()))
+                    .orElse(null);
+            if (latest == null) return ResponseEntity.status(404).build();
+
+            LatestResponse res = new LatestResponse();
+            res.snapshotName = projectId + "/" + fileDir + "/" + latest.getFileName();
+            res.content      = Files.readString(latest);
+            return ResponseEntity.ok(res);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    /* ─────────────────────────── project helpers ──────────────────── */
+
     @PostMapping("/project/{projectId}")
     public ResponseEntity<String> createProject(@PathVariable String projectId) {
         try {
-            Path projectPath = Paths.get(baseDir, "projects", projectId);
-            if (!Files.exists(projectPath)) {
-                Files.createDirectories(projectPath);
-            }
-            return ResponseEntity.ok("Project created: " + projectId);
+            Files.createDirectories(Paths.get(baseDir, projectId));
+            return ResponseEntity.ok("project created");
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error creating project: " + e.getMessage());
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
         }
     }
 
-    // ====== NEW: Delete Project (Folder) ======
     @DeleteMapping("/project/{projectId}")
     public ResponseEntity<String> deleteProject(@PathVariable String projectId) {
         try {
-            Path projectPath = Paths.get(baseDir, "projects", projectId);
-            if (Files.exists(projectPath)) {
-                Files.walk(projectPath)
-                        .sorted(Comparator.reverseOrder())
-                        .map(Path::toFile)
-                        .forEach(java.io.File::delete);
-            }
-            return ResponseEntity.ok("Project deleted: " + projectId);
+            Path p = Paths.get(baseDir, projectId);
+            if (Files.exists(p))
+                Files.walk(p).sorted(Comparator.reverseOrder())
+                     .forEach(f -> f.toFile().delete());
+            return ResponseEntity.ok("project deleted");
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting project: " + e.getMessage());
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
         }
     }
 
-    // === Internal Classes ===
-    static class SnapshotRequest {
-        private String filename;
-        private String content;
-
-        public String getFilename() { return filename; }
-        public void setFilename(String filename) { this.filename = filename; }
-
-        public String getContent() { return content; }
-        public void setContent(String content) { this.content = content; }
-    }
-
-    static class FileSystemResponse {
-        private String message;
-
-        public String getMessage() { return message; }
-        public void setMessage(String message) { this.message = message; }
-    }
     @PostMapping("/create-folder")
-    public ResponseEntity<String> createFolder(@RequestParam Long projectId, @RequestParam String folderName) {
-    try {
-        Path folderPath = Paths.get(baseDir, "projects", String.valueOf(projectId), folderName);
-        Files.createDirectories(folderPath);
-        return ResponseEntity.ok("Folder created");
-    } catch (IOException e) {
-        return ResponseEntity.status(500).body("Error: " + e.getMessage());
+    public ResponseEntity<String> createFolder(@RequestParam Long projectId,
+                                               @RequestParam String folderName) {
+        try {
+            Files.createDirectories(Paths.get(baseDir,
+                                              String.valueOf(projectId),
+                                              folderName));
+            return ResponseEntity.ok("folder created");
+        } catch (IOException e) {
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+        }
     }
-}
 
+    /* ───────────────────────────── DTOs ───────────────────────────── */
+
+    static class SnapshotRequest { public String filename; public String content; }
+    static class FileSystemResponse { public String message; }
+    static class LatestResponse { public String snapshotName; public String content; }
 }
