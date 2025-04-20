@@ -13,6 +13,15 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import com.github.difflib.DiffUtils;
+import com.github.difflib.patch.Patch;
+import com.github.difflib.patch.AbstractDelta;
+
+
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -28,6 +37,7 @@ public class CodeController {
     @Value("${filesystem.service.url}")
     private String fsUrl;
 
+    
     private final RestTemplate rest = new RestTemplate();
     private final FileMetadataRepository metaRepo;
     private final FolderRepository folderRepo;
@@ -186,7 +196,80 @@ public class CodeController {
                 return ResponseEntity.status(500).body("Error retrieving snapshot: " + e.getMessage());
             }
         }
+    /* ───────────────────────────── DIFF ────────────────────────────── */
+    @GetMapping("/diff")
+        public ResponseEntity<List<String>> getSnapshotDiff(
+        @RequestParam String fileId,
+        @RequestParam String current,
+        @RequestParam(required = false) String previous,
+        @RequestParam String filename,
+        @RequestParam String projectId
+    ) {
+        try {
+            String currContent = getSnapshotContentFromFs(fileId, filename, current, projectId);
+            // if there is no previous timestamp at all, short‑circuit:
+            if (previous == null) {
+                return ResponseEntity.ok(List.of("Initial snapshot."));
+            }
+
+            // pull the previous snapshot, but default to empty string if it's not found
+            String prevContent = getSnapshotContentFromFs(fileId, filename, previous, projectId);
+            if (prevContent == null) {
+                prevContent = "";
+            }
+
+            // now safe to split
+            List<String> original = prevContent.isBlank()
+                ? List.of()
+                : Arrays.asList(prevContent.split("\\r?\\n"));
+            List<String> revised = currContent.isBlank()
+                ? List.of()
+                : Arrays.asList(currContent.split("\\r?\\n"));
+
+            Patch<String> patch = DiffUtils.diff(original, revised);
+
+            List<String> diff = new ArrayList<>();
+            for (AbstractDelta<String> delta : patch.getDeltas()) {
+                diff.add("[" + delta.getType() + "] at line " + delta.getSource().getPosition());
+                delta.getSource().getLines().forEach(line -> diff.add("- " + line));
+                delta.getTarget().getLines().forEach(line -> diff.add("+ " + line));
+                diff.add("");
+            }
+
+            return ResponseEntity.ok(diff);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(List.of("Error generating diff: " + e.getMessage()));
+        }
+    }
+
+
+    private String getSnapshotContentFromFs(String fileId, String filename, String timestamp, String projectId) {
+        try {
+            String fileDir = fileId + "-" + filename.replace('.', '-');
+            String ext = "";
     
+            int lastDot = filename.lastIndexOf('.');
+            if (lastDot != -1) {
+                ext = filename.substring(lastDot);
+            }
+    
+            String cleanTimestamp = timestamp.replace(":", "").replace("-", "").replace(" ", "_");
+            String snapName = fileId + "_" + cleanTimestamp + ext;
+            String relPath = projectId + "/" + fileDir + "/" + snapName;
+    
+            ResponseEntity<String> rsp = rest.getForEntity(fsUrl + "/read?filename=" + relPath, String.class);
+            if (rsp.getStatusCode().is2xxSuccessful()) {
+                return rsp.getBody();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "";
+    }
+    
+
 
     /* ─────────────────────────── DTOS ─────────────────────────────── */
 

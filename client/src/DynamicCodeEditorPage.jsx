@@ -75,6 +75,7 @@ export default function DynamicCodeEditorPage() {
   const [output, setOutput]       = useState('');
   const [snapshots, setSnapshots] = useState([]);
   const [expandedSnapshots, setExpandedSnapshots] = useState({});
+  const [snapshotDiffs, setSnapshotDiffs] = useState({});
 
   /* ------------- auth / role ------------- */
   useEffect(() => {
@@ -282,10 +283,42 @@ export default function DynamicCodeEditorPage() {
       })
       .catch(e => setOutput('Execution failed: ' + e.message));
   };
-  function toggleSnapshot(id) {
-    setExpandedSnapshots(prev => ({ ...prev, [id]: !prev[id] }));
+
+  async function fetchDiff({ fileId, projectId, filename, current, previous }) {
+    const params = new URLSearchParams({
+      fileId,
+      filename,
+      projectId,
+      current,
+    });
+    if (previous) params.append("previous", previous);
+    const res = await fetch(`/api/code/diff?${params.toString()}`, {
+      credentials: 'include'
+    });
+    if (!res.ok) return ["Failed to fetch diff."];
+    return await res.json();
   }
 
+    function toggleSnapshot(id) {
+        setExpandedSnapshots(prev => ({ ...prev, [id]: !prev[id] }));
+        const index = snapshots.findIndex(sn => sn.id === id);
+        const snap  = snapshots[index];    
+        // build the space‑separated timestamps just like the backend expects
+        const currTs = snap.timestamp
+          .split('.')[0]       // drop fractional seconds
+          .replace('T', ' ');   // "2025-04-17T23:06:33" → "2025-04-17 23:06:33"
+    
+        const prevTs = index > 0
+          ? snapshots[index - 1].timestamp.split('.')[0].replace('T', ' ')
+          : null;
+    
+        console.log("💥 Fetching diff with:", { fileId, filename, projectId, current: currTs, previous: prevTs });
+    
+        if (!snapshotDiffs[id]) {
+          fetchDiff({ fileId, filename, projectId, current: currTs, previous: prevTs })
+            .then(diff => setSnapshotDiffs(d => ({ ...d, [id]: diff })));
+        }
+      }
 
   const [project, setProject] = useState(null);
 
@@ -405,20 +438,40 @@ export default function DynamicCodeEditorPage() {
                         <button onClick={() => handleRevert(s)} style={{ marginLeft: 8 }}>Revert</button>
                       )}
                     </div>
-                  {expandedSnapshots[s.id] && (
-                    <div style={{
-                      marginLeft: 24,
-                      marginTop: 4,
-                      padding: '4px',
-                      background: '#f9f9f9',
-                      color: '#333',
-                      fontSize: '0.9em',
-                      borderRadius: '4px'
-                    }}>
-                      {/* diff log placeholder */}
-                      Change log placeholder...
-                    </div>
-                  )}
+                    {expandedSnapshots[s.id] && (
+                      <div style={{
+                       marginLeft: 24,
+                        marginTop: 4,
+                        padding: '4px',
+                        background: '#f9f9f9',
+                        fontSize: '0.9em',
+                        borderRadius: '4px'
+                      }}>
+                        {snapshotDiffs[s.id] ? (
+                          snapshotDiffs[s.id].map((line, idx) => {
+                            const color = line.startsWith('+') 
+                              ? 'green'
+                              : line.startsWith('-')
+                              ? 'red'
+                              : 'grey';
+                            return (
+                              <div 
+                                key={idx}
+                                style={{ 
+                                  fontFamily: 'monospace', 
+                                  whiteSpace: 'pre-wrap', 
+                                  color 
+                                }}
+                              >
+                                {line}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <span>Loading diff...</span>
+                        )}
+                      </div>
+                    )}
                 </li>
               ))}
             </ul>
