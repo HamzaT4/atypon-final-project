@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import SockJS from 'sockjs-client';
+import { over } from 'stompjs';
+import { Client } from '@stomp/stompjs';
 
 /* ─────────────────────────── Helpers ─────────────────────────── */
 
@@ -77,6 +80,10 @@ export default function DynamicCodeEditorPage() {
   const [expandedSnapshots, setExpandedSnapshots] = useState({});
   const [snapshotDiffs, setSnapshotDiffs] = useState({});
 
+  const [stompClient, setStompClient] = useState(null);
+  const [editNotification, setEditNotification] = useState(null);
+
+  
   /* ------------- auth / role ------------- */
   useEffect(() => {
     fetch('/api/user-auth', { credentials: 'include' })
@@ -143,6 +150,35 @@ export default function DynamicCodeEditorPage() {
         setSnapshots([]);
       });
   }, [fileId, filesByFolder]);
+
+
+  /* ------------- websocket connection ------------- */
+  function connectWebSocket() {
+    const socket = new SockJS('/ws');
+    const stomp = over(socket);
+    stomp.connect({}, () => {
+      stomp.subscribe(`/topic/edit/${fileId}`, (msg) => {
+        const data = JSON.parse(msg.body);
+        if (data.type === 'EDIT' && data.userId !== user?.id) {
+          setEditNotification(`${data.userId} is editing this file...`);
+          setTimeout(() => setEditNotification(null), 3000);
+        }
+      });
+  
+      stomp.send("/app/edit", {}, JSON.stringify({
+        type: 'SUBSCRIBE',
+        fileId,
+        userId: user?.id
+      }));
+    });
+    setStompClient(stomp);
+  }
+  
+  // Connect on user+fileId ready
+  useEffect(() => {
+    if (user && fileId) connectWebSocket();
+  }, [user, fileId]);
+  
 
 
 
@@ -320,6 +356,20 @@ export default function DynamicCodeEditorPage() {
         }
       }
 
+      function handleEditInput(e) {
+        const newText = e.target.value;
+        setCode(newText);
+        if (stompClient && stompClient.connected) {
+          stompClient.send("/app/edit", {}, JSON.stringify({
+            type: 'EDIT',
+            fileId,
+            userId: user?.id,
+            timestamp: new Date().toISOString(),
+            text: newText
+          }));
+        }
+      }
+
   const [project, setProject] = useState(null);
 
   useEffect(() => {
@@ -346,6 +396,12 @@ export default function DynamicCodeEditorPage() {
       <div>
         <h2 style={{ margin: 0 }}>{project?.name || "Project"}</h2>
       </div>
+      {editNotification && (
+          <div style={{ background: '#fffae6', padding: 5, marginBottom: 10, color: '#333', borderRadius: 4 }}>
+            {editNotification}
+          </div>
+        )}
+
       <div>
         <button onClick={() => navigate(`/project/${projectId}`)} style={{ marginRight: 10 }}>Back</button>
         <button onClick={() => navigate("/")}>Home</button>
@@ -381,7 +437,7 @@ export default function DynamicCodeEditorPage() {
           <textarea
             style={{ width: '100%', height: '70%', fontFamily: 'monospace' }}
             value={code}
-            onChange={e => setCode(e.target.value)}
+            onChange={handleEditInput}
             disabled={!canEdit}
           />
           {canEdit && (

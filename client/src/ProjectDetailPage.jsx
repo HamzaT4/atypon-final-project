@@ -2,26 +2,31 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
-function formatFileName(name) {
-  const parts = name.split('_');
-  const last = parts[parts.length - 1];
-  return /^\d+$/.test(last) ? parts.slice(0, -1).join('_') : name;
-}
-
+// Recursively render folder tree
 function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, navigate }) {
   const [expanded, setExpanded] = useState(false);
   const children = allFolders.filter(f => f.parentId === folder.id);
 
   return (
+    <>
+    <button
+        onClick={() => navigate(`/project/${projectId}/file/${file.id}`)}
+        style={{ marginLeft: 10 }}
+      >
+        {canEdit ? 'Edit' : 'View'}
+    </button>
     <li>
-      <div onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', padding: '2px 0' }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{ cursor: 'pointer', padding: '2px 0' }}
+      >
         {folder.name} {children.length ? (expanded ? '[-]' : '[+]') : ''}
       </div>
       {expanded && (
         <ul style={{ paddingLeft: 20 }}>
           {(filesByFolder[folder.id] || []).map(file => (
             <li key={file.id} style={{ display: 'flex', alignItems: 'center' }}>
-              <span style={{ flex: 1 }}>{formatFileName(file.filename)}</span>
+              <span style={{ flex: 1 }}>{file.filename}</span>
               {canEdit && (
                 <button
                   onClick={() => navigate(`/project/${projectId}/file/${file.id}`)}
@@ -46,7 +51,7 @@ function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, nav
         </ul>
       )}
     </li>
-  );
+    </> );
 }
 
 export default function ProjectDetailPage() {
@@ -69,6 +74,13 @@ export default function ProjectDetailPage() {
   const [newFileName, setNewFileName] = useState('');
   const [selectedFolderIdForFile, setSelectedFolderIdForFile] = useState('');
 
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [newMemberUsername, setNewMemberUsername] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState('viewer');
+
+  const canEdit = userRole === 'admin' || userRole === 'editor';
+
+  // Fetch folders & files helper
   const fetchFoldersAndFiles = () => {
     fetch(`/api/folders/project/${projectId}`, { credentials: 'include' })
       .then(r => r.json())
@@ -86,21 +98,18 @@ export default function ProjectDetailPage() {
       .catch(console.error);
   };
 
+  // Authentication and project data
   useEffect(() => {
     fetch('/api/user-auth', { credentials: 'include' })
       .then(r => r.json())
       .then(setUser)
       .catch(console.error);
-  }, []);
 
-  useEffect(() => {
     fetch(`/api/projects/${projectId}`, { credentials: 'include' })
       .then(r => r.json())
       .then(setProject)
       .catch(console.error);
-  }, [projectId]);
 
-  useEffect(() => {
     fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' })
       .then(r => r.json())
       .then(teamData => {
@@ -113,24 +122,58 @@ export default function ProjectDetailPage() {
       .catch(console.error);
   }, [projectId, user]);
 
+  // Resolve usernames for team
   useEffect(() => {
-    if (team.length) {
-      Promise.all(
-        team.map(m =>
-          fetch(`/api/users/${m.userId}`, { credentials: 'include' })
-            .then(r => r.json())
-            .catch(() => ({ id: m.userId, username: m.userId }))
-        )
-      ).then(usersArr => {
-        const map = {};
-        usersArr.forEach(u => (map[u.id] = u.username));
-        setUserNames(map);
-      });
-    }
+    if (!team.length) return;
+    Promise.all(
+      team.map(m =>
+        fetch(`/api/users/${m.userId}`, { credentials: 'include' })
+          .then(r => r.json())
+          .catch(() => ({ id: m.userId, username: m.userId }))
+      )
+    ).then(usersArr => {
+      const map = {};
+      usersArr.forEach(u => (map[u.id] = u.username));
+      setUserNames(map);
+    });
   }, [team]);
 
+  // Load folders & files
   useEffect(fetchFoldersAndFiles, [projectId]);
 
+  // Add member handler
+  const handleAddMember = async () => {
+    try {
+      const res = await fetch('/api/users', { credentials: 'include' });
+      const allUsers = await res.json();
+      const matches = allUsers.filter(u => u.username === newMemberUsername);
+      if (!matches.length) {
+        alert('User not found');
+        return;
+      }
+      const targetUser = matches[0];
+      const createRes = await fetch('/api/project-user-roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          projectId: Number(projectId),
+          userId: targetUser.id,
+          role: newMemberRole
+        })
+      });
+      if (!createRes.ok) throw new Error('Failed to add member');
+      const newRole = await createRes.json();
+      setTeam(prev => [...prev, newRole]);
+      setNewMemberUsername('');
+      setNewMemberRole('viewer');
+      setShowAddMember(false);
+    } catch (err) {
+      alert(err.message || 'Something went wrong');
+    }
+  };
+
+  // Create folder handler
   const handleCreateFolder = e => {
     e.preventDefault();
     fetch('/api/folders', {
@@ -148,11 +191,12 @@ export default function ProjectDetailPage() {
         setNewFolderName('');
         setSelectedParentId('');
         setShowNewFolderForm(false);
-        fetchFoldersAndFiles(); // Refresh
+        fetchFoldersAndFiles();
       })
       .catch(console.error);
   };
 
+  // Create file handler
   const handleCreateFile = e => {
     e.preventDefault();
     if (!selectedFolderIdForFile) return alert('Select a folder first!');
@@ -171,79 +215,73 @@ export default function ProjectDetailPage() {
         setNewFileName('');
         setSelectedFolderIdForFile('');
         setShowNewFileForm(false);
-        fetchFoldersAndFiles(); // Refresh
+        fetchFoldersAndFiles();
       })
       .catch(console.error);
-  };
-
-  const handleRemoveMember = roleId => {
-    fetch(`/api/project-user-roles/${roleId}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    })
-      .then(r => {
-        if (r.ok) setTeam(team.filter(m => m.id !== roleId));
-        else throw new Error('Failed');
-      })
-      .catch(err => alert(err.message));
   };
 
   if (!user || userRole === null)
     return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
 
-  const canEdit = userRole === 'admin' || userRole === 'editor';
   const topFolders = folders.filter(f => f.parentId == null);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: 20 }}>
-  <div style={{ marginBottom: 20 }}>
-    <h1>{project?.name || "Project"}</h1>
-    <button
-      onClick={() => {
-        for (const folder of folders) {
-          const files = filesByFolder[folder.id];
-          if (files && files.length) {
-            navigate(`/project/${projectId}/file/${files[0].id}`);
-            return;
-          }
-        }
-        alert("No files found in this project.");
-      }}
-    >
-      Edit Project
-    </button>
-  </div>
-      <div style={{ flex: '0 0 30%', borderRight: '1px solid #ccc', paddingRight: 20 }}>
+    <div style={{ display: 'flex', height: '100vh' }}>
+
+      <div style={{ flex: '0 0 30%', borderRight: '1px solid #ccc', padding: 20 }}>
         <h2>Team</h2>
-        {team.length === 0 ? (
-          <p>No team members.</p>
-        ) : (
-          <ul>
-            {team.map(member => {
-              const isProjectOwner = project && String(member.userId) === String(project.owner);
-              return (
-                <li key={member.id}>
-                  {`${userNames[member.userId] || member.userId} - ${member.role}`}
-                  {!isProjectOwner && userRole === 'admin' && (
-                    <>
-                      <button style={{ marginLeft: 5 }} onClick={() => alert('Edit role')}>
-                        Edit Role
-                      </button>
-                      <button style={{ marginLeft: 5 }} onClick={() => handleRemoveMember(member.id)}>
-                        Remove
-                      </button>
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+        <ul>
+          {team.map(member => {
+            const isOwner = project && String(member.userId) === String(project.owner);
+            return (
+              <li key={member.id}>
+                {`${userNames[member.userId] || member.userId} - ${member.role}`}
+                {!isOwner && userRole === 'admin' && (
+                  <>
+                    <button onClick={() => alert('Edit role')} style={{ marginLeft: 5 }}>Edit Role</button>
+                    <button onClick={() => {
+                      fetch(`/api/project-user-roles/${member.id}`, { method: 'DELETE', credentials: 'include' })
+                        .then(r => r.ok && setTeam(t => t.filter(m => m.id !== member.id)))
+                        .catch(console.error);
+                    }} style={{ marginLeft: 5 }}>Remove</button>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        {userRole === 'admin' && (
+          <div style={{ marginTop: 20 }}>
+            {!showAddMember ? (
+              <button onClick={() => setShowAddMember(true)}>+ Add Member</button>
+            ) : (
+              <div style={{ marginTop: 10 }}>
+                <input
+                  placeholder="Username"
+                  value={newMemberUsername}
+                  onChange={e => setNewMemberUsername(e.target.value)}
+                  style={{ marginRight: 10 }}
+                />
+                <select
+                  value={newMemberRole}
+                  onChange={e => setNewMemberRole(e.target.value)}
+                  style={{ marginRight: 10 }}
+                >
+                  <option value="admin">Admin</option>
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <button onClick={handleAddMember}>Add</button>
+                <button onClick={() => setShowAddMember(false)} style={{ marginLeft: 10 }}>Cancel</button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      <div style={{ flex: 1, paddingLeft: 20 }}>
+      <div style={{ flex: 1, padding: 20 }}>
         <h2>Folder Structure</h2>
-        {folders.length === 0 ? (
+        {topFolders.length === 0 ? (
           <p>No folders available.</p>
         ) : (
           <ul>
@@ -261,69 +299,63 @@ export default function ProjectDetailPage() {
           </ul>
         )}
 
-        {/* Folder form */}
-        <div style={{ marginTop: 20 }}>
-          <button onClick={() => setShowNewFolderForm(!showNewFolderForm)}>
-            {showNewFolderForm ? 'Cancel New Folder' : '+ New Folder'}
-          </button>
-          {showNewFolderForm && (
-            <form onSubmit={handleCreateFolder} style={{ marginTop: 10 }}>
-              <input
-                type="text"
-                placeholder="Folder Name"
-                value={newFolderName}
-                onChange={e => setNewFolderName(e.target.value)}
-                required
-                style={{ marginRight: 10 }}
-              />
-              <select value={selectedParentId} onChange={e => setSelectedParentId(e.target.value)}>
-                <option value="">No Parent</option>
-                {folders.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" style={{ marginLeft: 10 }}>
-                Create
+        {canEdit && (
+          <>
+            <div style={{ marginTop: 20 }}>
+              <button onClick={() => setShowNewFolderForm(!showNewFolderForm)}>
+                {showNewFolderForm ? 'Cancel New Folder' : '+ New Folder'}
               </button>
-            </form>
-          )}
-        </div>
+              {showNewFolderForm && (
+                <form onSubmit={handleCreateFolder} style={{ marginTop: 10 }}>
+                  <input
+                    type="text"
+                    placeholder="Folder Name"
+                    value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    required
+                    style={{ marginRight: 10 }}
+                  />
+                  <select value={selectedParentId} onChange={e => setSelectedParentId(e.target.value)}>
+                    <option value="">No Parent</option>
+                    {folders.map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                  <button type="submit" style={{ marginLeft: 10 }}>Create</button>
+                </form>
+              )}
+            </div>
 
-        {/* File form */}
-        <div style={{ marginTop: 20 }}>
-          <button onClick={() => setShowNewFileForm(!showNewFileForm)}>
-            {showNewFileForm ? 'Cancel New File' : '+ New File'}
-          </button>
-          {showNewFileForm && (
-            <form onSubmit={handleCreateFile} style={{ marginTop: 10 }}>
-              <input
-                type="text"
-                placeholder="File Name"
-                value={newFileName}
-                onChange={e => setNewFileName(e.target.value)}
-                required
-                style={{ marginRight: 10 }}
-              />
-              <select
-                value={selectedFolderIdForFile}
-                onChange={e => setSelectedFolderIdForFile(e.target.value)}
-                required
-              >
-                <option value="">Select Folder</option>
-                {folders.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" style={{ marginLeft: 10 }}>
-                Create
+            <div style={{ marginTop: 20 }}>
+              <button onClick={() => setShowNewFileForm(!showNewFileForm)}>
+                {showNewFileForm ? 'Cancel New File' : '+ New File'}
               </button>
-            </form>
-          )}
-        </div>
+              {showNewFileForm && (
+                <form onSubmit={handleCreateFile} style={{ marginTop: 10 }}>
+                  <input
+                    type="text"
+                    placeholder="File Name"
+                    value={newFileName}
+                    onChange={e => setNewFileName(e.target.value)}
+                    required
+                    style={{ marginRight: 10 }}
+                  />
+                  <select
+                    value={selectedFolderIdForFile}
+                    onChange={e => setSelectedFolderIdForFile(e.target.value)}
+                    required
+                  >
+                    <option value="">Select Folder</option>
+                    {folders.map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                  <button type="submit" style={{ marginLeft: 10 }}>Create</button>
+                </form>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
