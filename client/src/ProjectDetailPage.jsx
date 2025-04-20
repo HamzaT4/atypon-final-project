@@ -195,7 +195,24 @@ export default function ProjectDetailPage() {
   const topFolders = folders.filter(f => f.parentId == null);
 
   return (
-    <div style={{ display: 'flex', padding: 20 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', padding: 20 }}>
+  <div style={{ marginBottom: 20 }}>
+    <h1>{project?.name || "Project"}</h1>
+    <button
+      onClick={() => {
+        for (const folder of folders) {
+          const files = filesByFolder[folder.id];
+          if (files && files.length) {
+            navigate(`/project/${projectId}/file/${files[0].id}`);
+            return;
+          }
+        }
+        alert("No files found in this project.");
+      }}
+    >
+      Edit Project
+    </button>
+  </div>
       <div style={{ flex: '0 0 30%', borderRight: '1px solid #ccc', paddingRight: 20 }}>
         <h2>Team</h2>
         {team.length === 0 ? (

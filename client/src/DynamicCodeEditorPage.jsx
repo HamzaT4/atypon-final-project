@@ -197,6 +197,46 @@ export default function DynamicCodeEditorPage() {
       alert('Failed to revert snapshot: ' + err.message);
     }
   }
+
+  const handleFork = async () => {
+    if (!projectId) return;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/fork`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const newProject = await res.json();
+      navigate(`/project/${newProject.id}`);
+    } catch (err) {
+      alert("Fork failed: " + err.message);
+    }
+  };
+
+  const handleMerge = async () => {
+    const otherId = window.prompt("Enter project ID to merge with:");
+    if (!otherId || isNaN(Number(otherId))) return alert("Invalid ID");
+  
+    try {
+      const res = await fetch(`/api/projects/${projectId}/merge`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otherProjectId: Number(otherId) }),
+      });
+  
+      if (!res.ok) throw new Error(await res.text());
+      const newProject = await res.json();
+      navigate(`/project/${newProject.id}`);
+    } catch (err) {
+      alert("Merge failed: " + err.message);
+    }
+  };
+  
+
+  const handleClone = () => {
+    window.location.href = `/api/projects/${projectId}/download`;
+  };
   
 
 
@@ -246,6 +286,17 @@ export default function DynamicCodeEditorPage() {
     setExpandedSnapshots(prev => ({ ...prev, [id]: !prev[id] }));
   }
 
+
+  const [project, setProject] = useState(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${projectId}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(setProject)
+      .catch(console.error);
+  }, [projectId]);
+
   // Guard
   if (!user || userRole === null)
     return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
@@ -255,8 +306,18 @@ export default function DynamicCodeEditorPage() {
 
   /* ───────────────────────── render ───────────────────────────── */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    
 
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid #ccc' }}>
+      <div>
+        <h2 style={{ margin: 0 }}>{project?.name || "Project"}</h2>
+      </div>
+      <div>
+        <button onClick={() => navigate(`/project/${projectId}`)} style={{ marginRight: 10 }}>Back</button>
+        <button onClick={() => navigate("/")}>Home</button>
+      </div>
+    </div>
       {/* upper */}
       <div style={{ display: 'flex', flex: 1 }}>
         {/* file tree */}
@@ -273,6 +334,12 @@ export default function DynamicCodeEditorPage() {
               />
             ))}
           </ul>
+          <div style={{ marginBottom: 20 }}>
+          <button onClick={handleFork} style={{ marginRight: 10 }}>Fork</button>
+          <button onClick={handleClone} style={{ marginRight: 10 }}>Clone</button>
+            <button onClick={handleMerge} style={{ marginLeft: 10 }}>Merge</button>
+          </div>
+
         </div>
 
         {/* editor */}
