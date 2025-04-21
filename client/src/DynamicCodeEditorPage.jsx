@@ -82,6 +82,7 @@ export default function DynamicCodeEditorPage() {
 
   const [stompClient, setStompClient] = useState(null);
   const [editNotification, setEditNotification] = useState(null);
+  const [userNames, setUserNames] = useState({});
 
   
   /* ------------- auth / role ------------- */
@@ -89,13 +90,26 @@ export default function DynamicCodeEditorPage() {
     fetch('/api/user-auth', { credentials: 'include' })
       .then(r => r.json()).then(setUser).catch(console.error);
   }, []);
+
+
   useEffect(() => {
     if (!projectId || !user) return;
     fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' })
       .then(r => r.json())
-      .then(team => {
+      .then(async team => {
         const me = team.find(m => String(m.userId) === String(user.id));
         setUserRole(me ? me.role : null);
+        const nameMap = {};
+        for (const member of team) {
+          try {
+            const res = await fetch(`/api/users/${member.userId}`, { credentials: 'include' });
+            const data = await res.json();
+            nameMap[member.userId] = data.username;
+          } catch {
+            nameMap[member.userId] = member.userId;
+          }
+        }
+        setUserNames(nameMap);
       })
       .catch(console.error);
   }, [projectId, user]);
@@ -157,13 +171,28 @@ export default function DynamicCodeEditorPage() {
     const socket = new SockJS('/ws');
     const stomp = over(socket);
     stomp.connect({}, () => {
-      stomp.subscribe(`/topic/edit/${fileId}`, (msg) => {
+      stomp.subscribe(`/topic/edit/${fileId}`, async (msg) => {
         const data = JSON.parse(msg.body);
+      
         if (data.type === 'EDIT' && data.userId !== user?.id) {
-          setEditNotification(`${data.userId} is editing this file...`);
+          let username = userNames[data.userId];
+      
+          if (!username) {
+            // fetch username now and update the map
+            try {
+              const res = await fetch(`/api/users/${data.userId}`, { credentials: 'include' });
+              const userData = await res.json();
+              username = userData.username;
+              setUserNames(prev => ({ ...prev, [data.userId]: username }));
+            } catch {
+              username = data.userId;
+            }
+          }
+      
+          setEditNotification(`${username} is editing this file...`);
           setTimeout(() => setEditNotification(null), 3000);
         }
-      });
+      });;
   
       stomp.send("/app/edit", {}, JSON.stringify({
         type: 'SUBSCRIBE',
@@ -491,8 +520,12 @@ export default function DynamicCodeEditorPage() {
                     {snapshots[snapshots.length - 1]?.id === s.id ? (
                         <span style={{ marginLeft: 8, color: '#888', fontSize: '0.9em' }}>working here</span>
                       ) : (
-                        <button onClick={() => handleRevert(s)} style={{ marginLeft: 8 }}>Revert</button>
-                      )}
+                        canEdit ? (
+                          <button onClick={() => handleRevert(s)} style={{ marginLeft: 8 }}>Revert</button>
+                        ) : (
+                          <button disabled style={{ marginLeft: 8, opacity: 0.5, cursor: 'not-allowed' }}>Revert</button>
+                        )
+                    )}
                     </div>
                     {expandedSnapshots[s.id] && (
                       <div style={{

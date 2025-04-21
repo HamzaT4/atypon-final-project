@@ -9,12 +9,7 @@ function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, nav
 
   return (
     <>
-    <button
-        onClick={() => navigate(`/project/${projectId}/file/${file.id}`)}
-        style={{ marginLeft: 10 }}
-      >
-        {canEdit ? 'Edit' : 'View'}
-    </button>
+
     <li>
       <div
         onClick={() => setExpanded(!expanded)}
@@ -98,30 +93,42 @@ export default function ProjectDetailPage() {
       .catch(console.error);
   };
 
+  const getFirstFileId = () => {
+    for (const folderId of Object.keys(filesByFolder)) {
+      const files = filesByFolder[folderId];
+      if (files && files.length > 0) {
+        return files[0].id;
+      }
+    }
+    return null;
+  };
+
   // Authentication and project data
   useEffect(() => {
-    fetch('/api/user-auth', { credentials: 'include' })
-      .then(r => r.json())
-      .then(setUser)
-      .catch(console.error);
-
-    fetch(`/api/projects/${projectId}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(setProject)
-      .catch(console.error);
-
-    fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(teamData => {
+    const load = async () => {
+      try {
+        const userRes = await fetch('/api/user-auth', { credentials: 'include' });
+        const userData = await userRes.json();
+        setUser(userData);
+  
+        const projectRes = await fetch(`/api/projects/${projectId}`, { credentials: 'include' });
+        const projectData = await projectRes.json();
+        setProject(projectData);
+  
+        const teamRes = await fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' });
+        const teamData = await teamRes.json();
         setTeam(teamData);
-        if (user) {
-          const me = teamData.find(m => String(m.userId) === String(user.id));
-          setUserRole(me ? me.role : null);
-        }
-      })
-      .catch(console.error);
-  }, [projectId, user]);
-
+  
+        const me = teamData.find(m => String(m.userId) === String(userData.id));
+        setUserRole(me ? me.role : null);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+  
+    load();
+  }, [projectId]);
+  
   // Resolve usernames for team
   useEffect(() => {
     if (!team.length) return;
@@ -140,6 +147,12 @@ export default function ProjectDetailPage() {
 
   // Load folders & files
   useEffect(fetchFoldersAndFiles, [projectId]);
+
+  useEffect(() => {
+    if (!user || !team.length) return;
+    const me = team.find(m => String(m.userId) === String(user.id));
+    setUserRole(me ? me.role : null);
+  }, [user, team]);
 
   // Add member handler
   const handleAddMember = async () => {
@@ -224,6 +237,7 @@ export default function ProjectDetailPage() {
     return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
 
   const topFolders = folders.filter(f => f.parentId == null);
+  const firstFileId = getFirstFileId();
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
@@ -357,6 +371,17 @@ export default function ProjectDetailPage() {
           </>
         )}
       </div>
+      <div style={{ flex: 1 }}>
+          {firstFileId && (
+            <div style={{ padding: '10px 20px' }}>
+              <button
+                onClick={() => navigate(`/project/${projectId}/file/${firstFileId}`)}
+                style={{ padding: '10px 20px', fontSize: '16px' }}
+              >
+                {canEdit ? 'Edit Project' : 'View Project'}
+              </button>
+            </div>
+          )}</div>
     </div>
   );
 }
