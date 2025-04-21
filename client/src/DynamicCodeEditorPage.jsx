@@ -173,12 +173,11 @@ export default function DynamicCodeEditorPage() {
     stomp.connect({}, () => {
       stomp.subscribe(`/topic/edit/${fileId}`, async (msg) => {
         const data = JSON.parse(msg.body);
-      
+  
         if (data.type === 'EDIT' && data.userId !== user?.id) {
           let username = userNames[data.userId];
-      
+  
           if (!username) {
-            // fetch username now and update the map
             try {
               const res = await fetch(`/api/users/${data.userId}`, { credentials: 'include' });
               const userData = await res.json();
@@ -188,12 +187,26 @@ export default function DynamicCodeEditorPage() {
               username = data.userId;
             }
           }
-      
+  
           setEditNotification(`${username} is editing this file...`);
           setTimeout(() => setEditNotification(null), 3000);
         }
-      });;
   
+        if (data.type === 'REFRESH' && data.userId !== user?.id) {
+          // Someone else saved or ran code — refetch latest
+          const [newSnaps, latest] = await Promise.all([
+            fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' })
+              .then(r => r.ok ? r.json() : []),
+            fetch(`/api/code/latest?fileId=${fileId}`, { credentials: 'include' })
+              .then(r => r.ok ? r.json() : { content: '' })
+          ]);
+          setSnapshots(newSnaps);
+          setCode(latest.content || '');
+          setOutput('// Refreshed after update from another user');
+        }
+      });
+  
+      // Send SUBSCRIBE message on connect
       stomp.send("/app/edit", {}, JSON.stringify({
         type: 'SUBSCRIBE',
         fileId,
@@ -203,6 +216,7 @@ export default function DynamicCodeEditorPage() {
     setStompClient(stomp);
   }
   
+  
   // Connect on user+fileId ready
   useEffect(() => {
     if (user && fileId) connectWebSocket();
@@ -210,13 +224,11 @@ export default function DynamicCodeEditorPage() {
   
 
 
-
   async function handleRevert(snap) {
     if (!window.confirm(`Revert to snapshot #${snap.id}?`)) return;
   
     try {
-      // extract projectId, fileId, filename, timestamp from context and snapshot
-      const timestamp = snap.timestamp.split('.')[0].replace('T', ' '); // formatted to match pattern
+      const timestamp = snap.timestamp.split('.')[0].replace('T', ' ');
       const params = new URLSearchParams({
         projectId,
         fileId,
@@ -232,7 +244,7 @@ export default function DynamicCodeEditorPage() {
   
       const snapshotCode = await res.text();
   
-      // post it to save as a new snapshot
+      // Save reverted snapshot
       const saveRes = await fetch('/api/code', {
         method: 'POST',
         credentials: 'include',
@@ -247,23 +259,29 @@ export default function DynamicCodeEditorPage() {
   
       if (!saveRes.ok) throw new Error(await saveRes.text());
   
-      // refresh everything
-      const newSnaps = await fetch(`/api/code/snapshots?fileId=${fileId}`, {
-        credentials: 'include'
-      }).then(r => r.json());
-  
-      const latest = await fetch(`/api/code/latest?fileId=${fileId}`, {
-        credentials: 'include'
-      }).then(r => r.json());
+      // Refresh local view
+      const [newSnaps, latest] = await Promise.all([
+        fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' }).then(r => r.json()),
+        fetch(`/api/code/latest?fileId=${fileId}`, { credentials: 'include' }).then(r => r.json())
+      ]);
   
       setSnapshots(newSnaps);
       setCode(latest.content || '');
+  
+      // 🔁 Notify others to refresh
+      if (stompClient && stompClient.connected) {
+        stompClient.send("/app/edit", {}, JSON.stringify({
+          type: 'REFRESH',
+          fileId,
+          userId: user?.id
+        }));
+      }
   
     } catch (err) {
       alert('Failed to revert snapshot: ' + err.message);
     }
   }
-
+  
   const handleFork = async () => {
     if (!projectId) return;
     try {
@@ -327,19 +345,42 @@ export default function DynamicCodeEditorPage() {
     const summary = window.prompt("Snapshot summary:", "");
     if (summary === null) return;
     saveSnapshot(summary)
-      .then(() => fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' }))
-      .then(r => r.ok ? r.json() : [])
-      .then(setSnapshots)
-      .catch(e => alert(e.message));
+    .then(() => {
+      
+      if (stompClient && stompClient.connected) {
+        stompClient.send("/app/edit", {}, JSON.stringify({
+          type: 'REFRESH',
+          fileId,
+          userId: user?.id,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+      return fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' });
+    })
+    .then(r => r.ok ? r.json() : [])
+    .then(setSnapshots)
+    .catch(e => alert(e.message));
   };
+
   const handleRun = () => {
     const summary = window.prompt("Snapshot summary (will be executed):", "");
     if (summary === null) return;
+  
     saveSnapshot(summary)
       .then(async ({ fileId: fid, snapshotName }) => {
+        if (stompClient && stompClient.connected) {
+          stompClient.send("/app/edit", {}, JSON.stringify({
+            type: 'REFRESH',
+            fileId: fid,
+            userId: user?.id,
+            timestamp: new Date().toISOString(),
+          }));
+        }
+  
         const snaps = await fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' })
                            .then(r => r.ok ? r.json() : []);
         setSnapshots(snaps);
+  
         const r = await fetch(
           `/api/execute?fileId=${fid}&snapshotName=${encodeURIComponent(snapshotName)}`,
           { method: 'POST', credentials: 'include' }
