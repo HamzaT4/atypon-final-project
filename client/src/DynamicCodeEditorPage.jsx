@@ -88,7 +88,19 @@ export default function DynamicCodeEditorPage() {
   /* ------------- auth / role ------------- */
   useEffect(() => {
     fetch('/api/user-auth', { credentials: 'include' })
-      .then(r => r.json()).then(setUser).catch(console.error);
+      .then(r => r.json())
+      .then(async data => {
+        try {
+          const res = await fetch(`/api/users/${data.id}`, { credentials: 'include' });
+          const userDetails = await res.json();
+          setUser({ ...data, username: userDetails.username });
+          console.log("👤 Final resolved user with username:", userDetails.username);
+        } catch (err) {
+          console.error("Failed to fetch full user info:", err);
+          setUser(data); // fallback without username
+        }
+      })
+      .catch(console.error);
   }, []);
 
 
@@ -175,6 +187,7 @@ export default function DynamicCodeEditorPage() {
         const data = JSON.parse(msg.body);
   
         if (data.type === 'EDIT' && data.userId !== user?.id) {
+
           let username = userNames[data.userId];
   
           if (!username) {
@@ -188,7 +201,7 @@ export default function DynamicCodeEditorPage() {
             }
           }
   
-          setEditNotification(`${username} is editing this file...`);
+          setEditNotification({ username, message: `${username} is editing this file...` });
           setTimeout(() => setEditNotification(null), 3000);
         }
   
@@ -434,10 +447,13 @@ export default function DynamicCodeEditorPage() {
             type: 'EDIT',
             fileId,
             userId: user?.id,
+            isSender: true,
             timestamp: new Date().toISOString(),
             text: newText
           }));
         }
+        console.log("👤 Logged in username:", user?.username);
+        console.log("📢 EditNotification:", editNotification);
       }
 
   const [project, setProject] = useState(null);
@@ -466,11 +482,11 @@ export default function DynamicCodeEditorPage() {
       <div>
         <h2 style={{ margin: 0 }}>{project?.name || "Project"}</h2>
       </div>
-      {editNotification && (
-          <div style={{ background: '#fffae6', padding: 5, marginBottom: 10, color: '#333', borderRadius: 4 }}>
-            {editNotification}
-          </div>
-        )}
+      {editNotification && editNotification.username !== user?.username && (
+        <div style={{ background: '#fffae6', padding: 5, marginBottom: 10, color: '#333', borderRadius: 4 }}>
+          {editNotification.message}
+        </div>
+      )}
 
       <div>
         <button onClick={() => navigate(`/project/${projectId}`)} style={{ marginRight: 10 }}>Back</button>

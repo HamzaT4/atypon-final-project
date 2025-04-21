@@ -23,12 +23,17 @@ public class FileEditWebSocketController {
     public void handleEditMessage(@Payload EditMessage message) {
         if ("EDIT".equals(message.getType()) || "SUBSCRIBE".equals(message.getType())) {
             activeEditors.computeIfAbsent(message.getFileId(), k -> ConcurrentHashMap.newKeySet()).add(message.getUserId());
-            messagingTemplate.convertAndSend("/topic/edit/" + message.getFileId(), message);
+
+            // Skip broadcasting EDIT messages to the sender
+            if (!message.isSender) {
+                messagingTemplate.convertAndSend("/topic/edit/" + message.getFileId(), message);
+            }
+
         } else if ("REFRESH".equals(message.getType())) {
+            // Broadcast refresh to all
             messagingTemplate.convertAndSend("/topic/edit/" + message.getFileId(), message);
         }
     }
-    
 
     public static class EditMessage {
         private String type;
@@ -38,6 +43,7 @@ public class FileEditWebSocketController {
         private int start;
         private int end;
         private String timestamp;
+        private boolean isSender;
 
         public String getType() { return type; }
         public void setType(String type) { this.type = type; }
@@ -59,5 +65,8 @@ public class FileEditWebSocketController {
 
         public String getTimestamp() { return timestamp; }
         public void setTimestamp(String timestamp) { this.timestamp = timestamp; }
+
+        public boolean isSender() { return isSender; }
+        public void setSender(boolean isSender) { this.isSender = isSender; }
     }
 }
