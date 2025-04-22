@@ -12,7 +12,7 @@ public class ProjectUserRole {
 
     private String userId;
     private Long projectId;
-    private String role; // admin, editor, viewer
+    private String role; 
 
     public ProjectUserRole() {}
 

@@ -12,7 +12,7 @@ public class Folder {
     private String name;
     private Long projectId;
     
-    // New field to support nested folders (null for top-level folders)
+    
     private Long parentId;
 
     public Folder() {}
@@ -22,7 +22,7 @@ public class Folder {
         this.projectId = projectId;
     }
     
-    // Constructor for nested folder
+    
     public Folder(String name, Long projectId, Long parentId) {
         this.name = name;
         this.projectId = projectId;

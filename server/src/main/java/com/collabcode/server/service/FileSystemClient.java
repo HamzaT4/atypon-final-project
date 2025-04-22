@@ -8,7 +8,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-/** Wraps HTTP calls to the Filesystem micro‑service. */
 @Service
 public class FileSystemClient {
 
@@ -36,7 +35,6 @@ public class FileSystemClient {
         deleteNoBody("/project/" + projectId);
     }
 
-    /** create nested folder(s) under given project. */
     public void createFolder(Long projectId, String folderPath) {
         postNoBody("/create-folder?projectId=" + projectId + "&folderName=" + folderPath);
     }

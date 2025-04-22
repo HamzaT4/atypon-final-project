@@ -24,13 +24,11 @@ public class FileEditWebSocketController {
         if ("EDIT".equals(message.getType()) || "SUBSCRIBE".equals(message.getType())) {
             activeEditors.computeIfAbsent(message.getFileId(), k -> ConcurrentHashMap.newKeySet()).add(message.getUserId());
 
-            // Skip broadcasting EDIT messages to the sender
             if (!message.isSender) {
                 messagingTemplate.convertAndSend("/topic/edit/" + message.getFileId(), message);
             }
 
         } else if ("REFRESH".equals(message.getType())) {
-            // Broadcast refresh to all
             messagingTemplate.convertAndSend("/topic/edit/" + message.getFileId(), message);
         }
     }

@@ -41,14 +41,11 @@ public class ProjectService {
      * @return The saved Project with a new ProjectUserRole record.
      */
     public Project create(Project projectInput, String userId) {
-        // Set owner automatically to the authenticated user's id.
         Project project = ProjectFactory.createProject(projectInput.getName(), userId);
         Project saved = projectRepository.save(project);
 
-        // Create project folder in the filesystem.
         fileSystemClient.createProjectFolder(saved.getId());
 
-        // Create a new ProjectUserRole record for the creator with role "admin".
         ProjectUserRole pur = new ProjectUserRole(userId, saved.getId(), "admin");
         projectUserRoleRepository.save(pur);
 
@@ -72,7 +69,7 @@ public class ProjectService {
     }
 
     public void delete(Long id) {
-        getById(id);  // ensure exists
+        getById(id);  
         fileSystemClient.deleteProjectFolder(id);
         projectRepository.deleteById(id);
     }

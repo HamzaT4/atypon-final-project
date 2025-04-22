@@ -34,8 +34,7 @@ public class FolderService {
         }
         Folder saved = folderRepo.save(folder);
 
-        // Determine the folder path for the filesystem.
-        // If nested, include the parent's folder name in the path.
+    
         String folderPath;
         if (saved.getParentId() != null) {
             Folder parent = folderRepo.findById(saved.getParentId())
@@ -45,7 +44,6 @@ public class FolderService {
             folderPath = saved.getName();
         }
 
-        // Create the folder on the filesystem.
         fileSystemClient.createFolder(saved.getProjectId(), folderPath);
 
         return saved;
@@ -68,6 +66,5 @@ public class FolderService {
 
     public void delete(Long id) {
         folderRepo.deleteById(id);
-        // Optionally also notify the filesystem service.
     }
 }

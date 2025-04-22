@@ -6,7 +6,7 @@ import jakarta.persistence.Id;
 @Entity
 public class User {
     @Id
-    private String id; // We'll use GitHub's user ID as the unique identifier
+    private String id; 
 
     private String username;
     private String email;
@@ -19,7 +19,7 @@ public class User {
         this.email = email;
     }
 
-    // Getters and setters...
+   
     public String getId() {
         return id;
     }

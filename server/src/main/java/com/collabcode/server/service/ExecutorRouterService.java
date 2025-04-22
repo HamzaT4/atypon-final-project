@@ -16,12 +16,10 @@ import java.util.Map;
 @Service
 public class ExecutorRouterService {
 
-    // Define the strategy interface for executing code
     private interface ExecutorStrategy {
         String execute(String code) throws IOException, InterruptedException;
     }
 
-    // A simple HTTP-based executor strategy implementation
     private static class HttpExecutorStrategy implements ExecutorStrategy {
         private final String executorUrl;
 
@@ -42,7 +40,6 @@ public class ExecutorRouterService {
         }
     }
 
-    // Map languages to their corresponding executor strategies
     private final Map<String, ExecutorStrategy> strategyMap;
 
     public ExecutorRouterService() {

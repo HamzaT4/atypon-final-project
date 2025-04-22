@@ -19,10 +19,10 @@ public class UserAuthController {
     @GetMapping
     public Map<String, Object> getUserAuth(OAuth2AuthenticationToken authentication) {
         if (authentication != null) {
-            // Return the attributes from the authenticated principal
+           
             return authentication.getPrincipal().getAttributes();
         } else {
-            // If no authentication is present, return an empty map.
+           
             return Collections.emptyMap();
         }
     }

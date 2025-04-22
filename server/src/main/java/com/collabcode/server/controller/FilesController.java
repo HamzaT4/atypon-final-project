@@ -42,7 +42,6 @@ public class FilesController {
             String filename = req.getFilename();            // e.g. hamza1.rb
             String ext      = filename.substring(filename.lastIndexOf("."));
 
-            /* metadata (reuse if same name inside same folder) */
             FileMetadata meta = fileRepo.findAll().stream()
                     .filter(f -> f.getFilename().equals(filename)
                             && Objects.equals(f.getFolderId(), req.getFolderId()))
@@ -51,14 +50,12 @@ public class FilesController {
                             FileMetadataFactory.createFileMetadata(
                                     filename, "anonymous", req.getFolderId())));
 
-            /* derive project & build file‑directory name */
             Long projectId = folderRepo.findById(req.getFolderId())
                     .orElseThrow(() -> new RuntimeException("Folder not found"))
                     .getProjectId();
-            String fileDir = meta.getId() + "-" + filename.replace(".", "-");   // fileId-hamza1-rb
+            String fileDir = meta.getId() + "-" + filename.replace(".", "-");   
             fsClient.createFolder(projectId, fileDir);
 
-            /* first snapshot name (optional payload) */
             String ts   = LocalDateTime.now()
                     .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             String snap = meta.getId() + "_" + ts + ext;
@@ -86,7 +83,7 @@ public class FilesController {
         private String filename;
         private Long   folderId;
         private String code;
-        // getters / setters
+        
         public String getFilename(){return filename;}
         public void setFilename(String f){filename=f;}
         public Long getFolderId(){return folderId;}

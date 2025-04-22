@@ -81,7 +81,6 @@ public class CodeController {
     public ResponseEntity<SaveResponse> save(@RequestBody CodeRequest req,
                                              OAuth2AuthenticationToken auth) {
         try {
-            // locate or create FileMetadata
             FileMetadata meta = metaRepo.findAll().stream()
                 .filter(f -> f.getFilename().equals(req.getFilename())
                           && f.getFolderId().equals(req.getFolderId()))
@@ -96,10 +95,8 @@ public class CodeController {
                 .getProjectId();
             String fileDir = meta.getId() + "-" + req.getFilename().replace('.', '-');
 
-            // ensure folder exists on FS
             fsClient.createFolder(projectId, fileDir);
 
-            // ─── deduplication: if there's a latest snapshot and content unchanged, skip
             boolean identical = false;
             try {
                 String latestUrl = fsUrl
@@ -117,7 +114,6 @@ public class CodeController {
                     );
                 }
             } catch (HttpClientErrorException.NotFound nf) {
-                // 404 means no snapshots yet – treat as “not identical”
             }
 
             // ─── build and save new snapshot
@@ -207,18 +203,15 @@ public class CodeController {
     ) {
         try {
             String currContent = getSnapshotContentFromFs(fileId, filename, current, projectId);
-            // if there is no previous timestamp at all, short‑circuit:
             if (previous == null) {
                 return ResponseEntity.ok(List.of("Initial snapshot."));
             }
 
-            // pull the previous snapshot, but default to empty string if it's not found
             String prevContent = getSnapshotContentFromFs(fileId, filename, previous, projectId);
             if (prevContent == null) {
                 prevContent = "";
             }
 
-            // now safe to split
             List<String> original = prevContent.isBlank()
                 ? List.of()
                 : Arrays.asList(prevContent.split("\\r?\\n"));

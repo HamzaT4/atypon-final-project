@@ -5,13 +5,13 @@ import java.time.LocalDateTime;
 
 public class Snapshot {
     private Long id;
-    private String filename;    // actually the fileId in your design
+    private String filename;    
     private String author;
     private String summary;
     private LocalDateTime timestamp;
 
     public Snapshot() {
-        // Jackson deserialization
+        
     }
 
     public Long getId() {

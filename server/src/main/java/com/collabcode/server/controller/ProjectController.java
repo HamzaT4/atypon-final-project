@@ -94,15 +94,12 @@ public class ProjectController {
         try {
             String userId = auth.getPrincipal().getAttribute("id").toString();
 
-            // 1. Get original folders
             List<Folder> originalFolders = folderRepo.findByProjectId(id);
 
-            // 2. Get files from original project folders
             List<FileMetadata> originalFiles = fileMetaRepo.findAll().stream()
                     .filter(f -> originalFolders.stream().anyMatch(folder -> folder.getId().equals(f.getFolderId())))
                     .toList();
 
-            // 3. Get content for each file's latest snapshot
             Map<String, String> fileContentMap = new HashMap<>();
             for (FileMetadata file : originalFiles) {
                 Long folderId = file.getFolderId();
@@ -115,19 +112,16 @@ public class ProjectController {
                         fileContentMap.put(file.getFilename(), response.getBody().getContent());
                     }
                 } catch (Exception e) {
-                    // skip files with no snapshot
                 }
             }
 
-            // 4. Create new project
             Project original = projectService.getById(id);
             Project newProject = new Project();
             newProject.setName(original.getName() + "-fork");
             newProject.setOwner(userId);
             Project savedProject = projectService.create(newProject, userId);
 
-            // 5. Re-create folders (same names and hierarchy)
-            Map<Long, Long> folderMap = new HashMap<>(); // oldId -> newId
+            Map<Long, Long> folderMap = new HashMap<>(); 
             for (Folder folder : originalFolders) {
                 Folder copy = new Folder();
                 copy.setName(folder.getName());
@@ -140,7 +134,7 @@ public class ProjectController {
                 folderMap.put(folder.getId(), saved.getId());
             }
 
-            // 6. Re-create files + snapshots
+            
             for (FileMetadata file : originalFiles) {
                 Long newFolderId = folderMap.get(file.getFolderId());
                 String filename = file.getFilename();
@@ -207,24 +201,21 @@ public class ProjectController {
                 } catch (Exception ignored) {}
             }
 
-            // 4. Create new project
+           
             Project newProject = new Project();
             newProject.setName(project1.getName() + " + " + project2.getName());
             newProject.setOwner(userId);
             Project savedProject = projectService.create(newProject, userId);
 
-            // 5. Recreate folders (skip duplicates by name)
             Map<String, Long> createdFolders = new HashMap<>();
             Map<Long, Long> folderMap = new HashMap<>();
 
             for (Folder folder : allFolders) {
                 String folderKey = folder.getName();
                 if (createdFolders.containsKey(folderKey)) {
-                    // Check if the folder came from a different original folder (same name, different ID)
                     Long existingId = createdFolders.get(folderKey);
                     Folder existing = folderRepo.findById(existingId).orElse(null);
                     if (existing != null && !existing.getId().equals(folder.getId())) {
-                        // still map it to same destination, but let files from both go to it
                         folderMap.put(folder.getId(), createdFolders.get(folderKey));
                         continue;
                     }
@@ -243,7 +234,6 @@ public class ProjectController {
                 createdFolders.put(folderKey, saved.getId());
             }
 
-            // 6. Recreate files (rename duplicates)
             Map<String, Integer> fileNameCounts = new HashMap<>();
 
             for (FileMetadata file : files) {
@@ -269,7 +259,7 @@ public class ProjectController {
                 FilesController.FileCreationRequest req = new FilesController.FileCreationRequest();
                 req.setFilename(newName);
                 req.setFolderId(newFolderId);
-                req.setCode(""); // required but will be replaced below
+                req.setCode(""); 
                 FilesController.FileCreationResponse resp = (FilesController.FileCreationResponse)
                         filesController.createFile(req).getBody();
 
@@ -306,7 +296,7 @@ public class ProjectController {
 
         Map<Long, Folder> folderMap = folders.stream().collect(Collectors.toMap(Folder::getId, f -> f));
 
-        // Create a temp file for the zip
+        
         Path zipPath = Files.createTempFile("project-", ".zip");
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipPath))) {
             for (FileMetadata file : files) {
