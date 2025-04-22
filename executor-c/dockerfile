@@ -5,4 +5,3 @@ COPY . .
 RUN ./mvnw package -DskipTests
 EXPOSE 8085
 CMD ["java", "-jar", "target/executor-c-0.0.1-SNAPSHOT.jar"]
-

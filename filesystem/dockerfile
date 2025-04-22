@@ -1,18 +1,6 @@
-# Dockerfile for File System Service
-
-# Stage 1: Build the application
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM openjdk:17-jdk-alpine
 WORKDIR /app
 COPY . .
-RUN mvn clean package -DskipTests
-
-# Stage 2: Run the application using a lightweight runtime image
-FROM eclipse-temurin:17
-WORKDIR /app
-COPY --from=build /app/target/filesystem-*.jar app.jar
-
-# Expose port 8081 (or choose another if desired)
+RUN ./mvnw package -DskipTests
 EXPOSE 8081
-
-# Run the jar file
-ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["java", "-jar", "target/filesystem-0.0.1-SNAPSHOT.jar"]

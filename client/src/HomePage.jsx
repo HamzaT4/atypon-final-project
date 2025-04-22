@@ -67,7 +67,7 @@ export default function HomePage() {
   };
 
   const handleLogout = () => {
-    fetch("http://localhost:8080/logout", {
+    fetch("http://www.atypon-triaining-nov.online/logout", {
       method: "POST",
       credentials: "include"
     })
@@ -83,11 +83,11 @@ export default function HomePage() {
   };
 
   const handleLogin = () => {
-    window.location.href = "http://localhost:8080/oauth2/authorization/github?flow=login";
+    window.location.href = "http://www.atypon-triaining-nov.online/oauth2/authorization/github?flow=login";
   };
 
   const handleSignup = () => {
-    window.location.href = "http://localhost:8080/oauth2/authorization/github?flow=signup";
+    window.location.href = "http://www.atypon-triaining-nov.online/oauth2/authorization/github?flow=signup";
   };
 
   const handleCreateProject = () => {

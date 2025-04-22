@@ -42,9 +42,9 @@ public class CustomOAuth2AuthenticationSuccessHandler implements AuthenticationS
             } else {
                 logger.info("Login successful: Existing user '{}' (GitHub ID '{}') logged in", username, githubId);
             }
-            response.sendRedirect("http://localhost/");
+            response.sendRedirect("http://www.atypon-triaining-nov.online/");
         } else {
-            response.sendRedirect("http://localhost/");
+            response.sendRedirect("http://www.atypon-triaining-nov.online/");
         }
     }
 }
