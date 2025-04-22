@@ -1,12 +1,31 @@
-name: Build and Push Docker Images
+name: Test Server, Build, and Push Docker Images
 
 on:
   push:
     branches:
-      - main  
+      - main
 
 jobs:
+  test-server:
+    runs-on: ubuntu-latest
+    name: Test Server Service Before Build
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Java 17 for Server
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Run Server Tests (Maven)
+      working-directory: ./server
+      run: ./mvnw test
+
   build-and-push:
+    needs: test-server  # Wait for server tests to pass before building
     runs-on: ubuntu-latest
 
     strategy:
@@ -29,7 +48,7 @@ jobs:
     - name: Build and Push ${{ matrix.service }}
       uses: docker/build-push-action@v5
       with:
-        context: ./${{ matrix.service }}  
+        context: ./${{ matrix.service }}
         file: ./${{ matrix.service }}/Dockerfile
         push: true
         tags: hamzat4/${{ matrix.service }}:latest
