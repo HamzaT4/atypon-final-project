@@ -97,7 +97,7 @@ export default function DynamicCodeEditorPage() {
           console.log("👤 Final resolved user with username:", userDetails.username);
         } catch (err) {
           console.error("Failed to fetch full user info:", err);
-          setUser(data); // fallback without username
+          setUser(data); 
         }
       })
       .catch(console.error);
@@ -161,13 +161,11 @@ export default function DynamicCodeEditorPage() {
     setFilename(meta.filename);
     setCurrentFolderId(meta.folderId);
 
-    // latest code
     fetch(`/api/code/latest?fileId=${fileId}`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then(data => setCode(data ? data.content : ''))
       .catch(() => setCode(''));
 
-    // all snapshots
     fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(setSnapshots)
@@ -281,7 +279,7 @@ export default function DynamicCodeEditorPage() {
       setSnapshots(newSnaps);
       setCode(latest.content || '');
   
-      // 🔁 Notify others to refresh
+      //  Notify others to refresh
       if (stompClient && stompClient.connected) {
         stompClient.send("/app/edit", {}, JSON.stringify({
           type: 'REFRESH',
@@ -382,26 +380,31 @@ export default function DynamicCodeEditorPage() {
     saveSnapshot(summary)
       .then(async ({ fileId: fid, snapshotName }) => {
         if (stompClient && stompClient.connected) {
-          stompClient.send("/app/edit", {}, JSON.stringify({
-            type: 'REFRESH',
-            fileId: fid,
-            userId: user?.id,
-            timestamp: new Date().toISOString(),
-          }));
+          await new Promise(resolve => {
+            stompClient.send("/app/edit", {}, JSON.stringify({
+              type: 'REFRESH',
+              fileId: fid,
+              userId: user?.id,
+              timestamp: new Date().toISOString(),
+            }));
+            setTimeout(resolve, 200); 
+          });
         }
   
         const snaps = await fetch(`/api/code/snapshots?fileId=${fileId}`, { credentials: 'include' })
-                           .then(r => r.ok ? r.json() : []);
+                             .then(r => r.ok ? r.json() : []);
         setSnapshots(snaps);
   
         const r = await fetch(
           `/api/execute?fileId=${fid}&snapshotName=${encodeURIComponent(snapshotName)}`,
           { method: 'POST', credentials: 'include' }
         );
-        setOutput(await r.text());
+        const result = await r.text();
+        setOutput(result);
       })
       .catch(e => setOutput('Execution failed: ' + e.message));
   };
+  
 
   async function fetchDiff({ fileId, projectId, filename, current, previous }) {
     const params = new URLSearchParams({
@@ -422,10 +425,9 @@ export default function DynamicCodeEditorPage() {
         setExpandedSnapshots(prev => ({ ...prev, [id]: !prev[id] }));
         const index = snapshots.findIndex(sn => sn.id === id);
         const snap  = snapshots[index];    
-        // build the space‑separated timestamps just like the backend expects
         const currTs = snap.timestamp
-          .split('.')[0]       // drop fractional seconds
-          .replace('T', ' ');   // "2025-04-17T23:06:33" → "2025-04-17 23:06:33"
+          .split('.')[0]      
+          .replace('T', ' ');   
     
         const prevTs = index > 0
           ? snapshots[index - 1].timestamp.split('.')[0].replace('T', ' ')
@@ -452,8 +454,7 @@ export default function DynamicCodeEditorPage() {
             text: newText
           }));
         }
-        console.log("👤 Logged in username:", user?.username);
-        console.log("📢 EditNotification:", editNotification);
+
       }
 
   const [project, setProject] = useState(null);
@@ -466,7 +467,7 @@ export default function DynamicCodeEditorPage() {
       .catch(console.error);
   }, [projectId]);
 
-  // Guard
+ 
   if (!user || userRole === null)
     return <div style={{ padding: 40 }}>You are not a member of this project.</div>;
 
@@ -493,7 +494,7 @@ export default function DynamicCodeEditorPage() {
         <button onClick={() => navigate("/")}>Home</button>
       </div>
     </div>
-      {/* upper */}
+      
       <div style={{ display: 'flex', flex: 1 }}>
         {/* file tree */}
         <div style={{ width: '20%', borderRight: '1px solid #ccc', overflowY: 'auto', padding: 10 }}>
@@ -536,7 +537,7 @@ export default function DynamicCodeEditorPage() {
 
         {/* version control */}
         <div style={{
-          width: '20%',
+          width: '27%',
           borderLeft: '1px solid #ccc',
           padding: 10,
           overflowY: 'auto',

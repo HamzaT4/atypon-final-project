@@ -6,6 +6,7 @@ import com.collabcode.server.repository.FileMetadataRepository;
 import com.collabcode.server.repository.FolderRepository;
 import com.collabcode.server.service.FileSystemClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -65,6 +66,17 @@ public class FilesController {
             return ResponseEntity.ok(new FileCreationResponse(meta.getId(), snap));
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Error: " + e.getMessage());
+        }
+    }
+    /* ---------- read (metadata + file‑dir) ---------- */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteFile(@PathVariable String id) {
+        try {
+            fileRepo.deleteById(id);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                 .body("Failed to delete file: " + e.getMessage());
         }
     }
 

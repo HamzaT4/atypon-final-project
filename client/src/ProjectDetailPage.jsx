@@ -3,19 +3,22 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 // Recursively render folder tree
-function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, navigate }) {
+function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, navigate, onDeleteFolder, onDeleteFile }) {
   const [expanded, setExpanded] = useState(false);
   const children = allFolders.filter(f => f.parentId === folder.id);
 
   return (
-    <>
-
     <li>
       <div
         onClick={() => setExpanded(!expanded)}
         style={{ cursor: 'pointer', padding: '2px 0' }}
       >
         {folder.name} {children.length ? (expanded ? '[-]' : '[+]') : ''}
+        {canEdit && (
+          <button className="danger" onClick={() => onDeleteFolder(folder.id)} style={{ marginLeft: 10, color: 'red' }}>
+            Delete Folder
+          </button>
+        )}
       </div>
       {expanded && (
         <ul style={{ paddingLeft: 20 }}>
@@ -23,12 +26,21 @@ function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, nav
             <li key={file.id} style={{ display: 'flex', alignItems: 'center' }}>
               <span style={{ flex: 1 }}>{file.filename}</span>
               {canEdit && (
-                <button
-                  onClick={() => navigate(`/project/${projectId}/file/${file.id}`)}
-                  style={{ marginLeft: 10 }}
-                >
-                  Edit
-                </button>
+                <>
+                  <button
+                    onClick={() => navigate(`/project/${projectId}/file/${file.id}`)}
+                    style={{ marginLeft: 10 }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                  className="danger"
+                    onClick={() => onDeleteFile(file.id)}
+                    style={{ marginLeft: 10, color: 'red' }}
+                  >
+                    Delete
+                  </button>
+                </>
               )}
             </li>
           ))}
@@ -41,12 +53,14 @@ function FolderTree({ folder, allFolders, filesByFolder, canEdit, projectId, nav
               canEdit={canEdit}
               projectId={projectId}
               navigate={navigate}
+              onDeleteFolder={onDeleteFolder}
+              onDeleteFile={onDeleteFile}
             />
           ))}
         </ul>
       )}
     </li>
-    </> );
+  );
 }
 
 export default function ProjectDetailPage() {
@@ -75,7 +89,6 @@ export default function ProjectDetailPage() {
 
   const canEdit = userRole === 'admin' || userRole === 'editor';
 
-  // Fetch folders & files helper
   const fetchFoldersAndFiles = () => {
     fetch(`/api/folders/project/${projectId}`, { credentials: 'include' })
       .then(r => r.json())
@@ -103,33 +116,31 @@ export default function ProjectDetailPage() {
     return null;
   };
 
-  // Authentication and project data
   useEffect(() => {
     const load = async () => {
       try {
         const userRes = await fetch('/api/user-auth', { credentials: 'include' });
         const userData = await userRes.json();
         setUser(userData);
-  
+
         const projectRes = await fetch(`/api/projects/${projectId}`, { credentials: 'include' });
         const projectData = await projectRes.json();
         setProject(projectData);
-  
+
         const teamRes = await fetch(`/api/project-user-roles/project/${projectId}`, { credentials: 'include' });
         const teamData = await teamRes.json();
         setTeam(teamData);
-  
+
         const me = teamData.find(m => String(m.userId) === String(userData.id));
         setUserRole(me ? me.role : null);
       } catch (err) {
         console.error(err);
       }
     };
-  
+
     load();
   }, [projectId]);
-  
-  // Resolve usernames for team
+
   useEffect(() => {
     if (!team.length) return;
     Promise.all(
@@ -145,7 +156,6 @@ export default function ProjectDetailPage() {
     });
   }, [team]);
 
-  // Load folders & files
   useEffect(fetchFoldersAndFiles, [projectId]);
 
   useEffect(() => {
@@ -154,7 +164,6 @@ export default function ProjectDetailPage() {
     setUserRole(me ? me.role : null);
   }, [user, team]);
 
-  // Add member handler
   const handleAddMember = async () => {
     try {
       const res = await fetch('/api/users', { credentials: 'include' });
@@ -186,7 +195,6 @@ export default function ProjectDetailPage() {
     }
   };
 
-  // Create folder handler
   const handleCreateFolder = e => {
     e.preventDefault();
     fetch('/api/folders', {
@@ -209,7 +217,6 @@ export default function ProjectDetailPage() {
       .catch(console.error);
   };
 
-  // Create file handler
   const handleCreateFile = e => {
     e.preventDefault();
     if (!selectedFolderIdForFile) return alert('Select a folder first!');
@@ -231,6 +238,18 @@ export default function ProjectDetailPage() {
         fetchFoldersAndFiles();
       })
       .catch(console.error);
+  };
+
+  const handleDeleteFolder = async (folderId) => {
+    if (!window.confirm("Are you sure you want to delete this folder and all its contents?")) return;
+    await fetch(`/api/folders/${folderId}`, { method: 'DELETE', credentials: 'include' });
+    fetchFoldersAndFiles();
+  };
+
+  const handleDeleteFile = async (fileId) => {
+    if (!window.confirm("Are you sure you want to delete this file?")) return;
+    await fetch(`/api/files/${fileId}`, { method: 'DELETE', credentials: 'include' });
+    fetchFoldersAndFiles();
   };
 
   if (!user || userRole === null)
@@ -308,6 +327,8 @@ export default function ProjectDetailPage() {
                 canEdit={canEdit}
                 projectId={projectId}
                 navigate={navigate}
+                onDeleteFolder={handleDeleteFolder}
+                onDeleteFile={handleDeleteFile}
               />
             ))}
           </ul>
@@ -371,17 +392,19 @@ export default function ProjectDetailPage() {
           </>
         )}
       </div>
+
       <div style={{ flex: 1 }}>
-          {firstFileId && (
-            <div style={{ padding: '10px 20px' }}>
-              <button
-                onClick={() => navigate(`/project/${projectId}/file/${firstFileId}`)}
-                style={{ padding: '10px 20px', fontSize: '16px' }}
-              >
-                {canEdit ? 'Edit Project' : 'View Project'}
-              </button>
-            </div>
-          )}</div>
+        {firstFileId && (
+          <div style={{ padding: '10px 20px' }}>
+            <button
+              onClick={() => navigate(`/project/${projectId}/file/${firstFileId}`)}
+              style={{ padding: '10px 20px', fontSize: '16px' }}
+            >
+              {canEdit ? 'Edit Project' : 'View Project'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

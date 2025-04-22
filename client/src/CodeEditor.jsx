@@ -61,7 +61,7 @@ export default function CodeEditor() {
 
   const handleRun = async () => {
     try {
-      // First, save the current code.
+      //  save the current code.
       const saveRes = await fetch('/api/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -85,7 +85,7 @@ export default function CodeEditor() {
         return;
       }
 
-      // Then, execute the saved code.
+      //  execute the saved code.
       const res = await fetch(`/api/execute?fileId=${fileId}&snapshotName=${snapshotName}`, {
         method: 'POST'
       });
@@ -118,7 +118,6 @@ export default function CodeEditor() {
         <h2>📁 Files</h2>
         <ul>
           <li>{filename}</li>
-          {/* This area can be enhanced to list all files */}
         </ul>
       </div>
 

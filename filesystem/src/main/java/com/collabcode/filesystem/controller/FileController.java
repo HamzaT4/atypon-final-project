@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 @RestController
 public class FileController {
 
-    @Value("${filesystem.base-dir}")  // -> /data/projects
+    @Value("${filesystem.base-dir}") 
     private String baseDir;
 
     private final SnapshotRepository snapshots;
@@ -51,7 +51,6 @@ public class FileController {
             Objects.requireNonNull(req.author,   "author is null");
             Objects.requireNonNull(req.summary,  "summary is null");
 
-            // write to disk (unchanged)
             Path filePath = Paths.get(baseDir).resolve(req.filename);
             Files.createDirectories(filePath.getParent());
             Files.writeString(
@@ -60,7 +59,6 @@ public class FileController {
                 StandardOpenOption.TRUNCATE_EXISTING
             );
 
-            // save snapshot record using only the fileId
             snapshots.save(new Snapshot(
                 req.fileId,
                 req.author,

@@ -1,8 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import HomePage from './HomePage';
-import ProjectPage from './ProjectPage';
-import FilePage from './FilePage';
+
 import ProjectDetailPage from './ProjectDetailPage';
 import DynamicCodeEditorPage from './DynamicCodeEditorPage';
 

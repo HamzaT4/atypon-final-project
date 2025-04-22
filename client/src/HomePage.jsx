@@ -46,6 +46,26 @@ export default function HomePage() {
       .catch(err => console.error('Error fetching user roles:', err));
   };
 
+  const handleDeleteProject = (projectId) => {
+    if (!window.confirm("Are you sure you want to delete this project?")) return;
+
+    fetch(`/api/projects/${projectId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+      .then(res => {
+        if (res.ok) {
+          setProjects(prev => prev.filter(p => p.id !== projectId));
+        } else {
+          alert("Failed to delete project");
+        }
+      })
+      .catch(err => {
+        console.error("Error deleting project:", err);
+        alert("Error deleting project");
+      });
+  };
+
   const handleLogout = () => {
     fetch("http://localhost:8080/logout", {
       method: "POST",
@@ -127,15 +147,35 @@ export default function HomePage() {
         {projects.length === 0 ? (
           <p>No projects found.</p>
         ) : (
-          <ul>
-            {projects.map(project => (
-              <li key={project.id}>
-                <Link to={`/project/${project.id}`}>
+          <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
+          {projects.map(project => (
+            <li key={project.id} style={{ marginBottom: '8px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <Link to={`/project/${project.id}`} style={{ textDecoration: 'none', color: '#4fc3f7' }}>
                   {project.name} {userRoles[project.id] ? `- ${userRoles[project.id]}` : ''}
                 </Link>
-              </li>
-            ))}
-          </ul>
+                {String(project.owner) === String(user.id) && (
+                  <button
+                    className="danger"
+                    onClick={() => handleDeleteProject(project.id)}
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '10px',
+                      backgroundColor: '#e74c3c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+
         )}
       </div>
     );
