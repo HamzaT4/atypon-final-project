@@ -1,5 +1,6 @@
 package com.collabcode.server.controller;
 
+import com.collabcode.server.config.CustomOAuth2AuthenticationSuccessHandler;
 import com.collabcode.server.entity.User;
 import com.collabcode.server.service.UserService;
 import org.junit.jupiter.api.Test;
@@ -26,8 +27,12 @@ public class UserControllerTest {
     @MockBean
     private UserService userService;
 
+    
+    @MockBean
+    private CustomOAuth2AuthenticationSuccessHandler customOAuth2AuthenticationSuccessHandler;
+
     @Test
-    @WithMockUser  
+    @WithMockUser 
     public void testGetUserById() throws Exception {
         User mockUser = new User();
         mockUser.setId("123");
