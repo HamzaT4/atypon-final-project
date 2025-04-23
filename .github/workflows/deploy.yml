@@ -1,12 +1,14 @@
 name: Deploy to EC2 via Bastion
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Test Server, Build, and Push Docker Images"] # Name of your build workflow
+    types:
+      - completed
 
 jobs:
   deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -18,11 +20,10 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/bastion_key.pem
         chmod 600 ~/.ssh/bastion_key.pem
-        ssh-keyscan -H ${{ secrets.BASTION_HOST }} >> ~/.ssh/known_hosts
 
     - name: Deploy via Bastion to Target EC2
       run: |
-        ssh -i ~/.ssh/bastion_key.pem ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} << 'ENDSSH'
+        ssh -i ~/.ssh/bastion_key.pem -o StrictHostKeyChecking=no ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} << 'ENDSSH'
           ssh -o StrictHostKeyChecking=no ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_PRIVATE_IP }} << 'INNERSSH'
             docker-compose pull
             docker-compose up -d

@@ -115,7 +115,7 @@ export default function HomePage() {
   if (!user) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
-        <h1>Welcome to Gitypon Hub</h1>
+        <h1>Welcome to Gitypon Hub v1.0</h1>
         <p>Edit with your team in real time!</p>
         <button onClick={handleLogin} style={{ marginRight: '10px' }}>
           Login with GitHub
